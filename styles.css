@@ -295,6 +295,22 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .chat-form input { flex: 1; border-radius: 999px; }
 .chat-empty { text-align: center; color: var(--muted); margin: auto; padding: 30px; }
 
+/* Teach-back (Feynman) */
+.teach { max-width: 680px; margin: 0 auto; }
+.btn-icon.recording { background: var(--bad) !important; color: #fff; animation: rec-pulse 1.4s ease-in-out infinite; }
+.teach-result { margin-top: 22px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); animation: fade .3s ease; }
+.score-ring { width: 116px; height: 116px; border-radius: 50%; margin: 0 auto 6px;
+  display: grid; place-content: center; position: relative;
+  background: conic-gradient(var(--ring) calc(var(--val) * 1%), var(--surface-2) 0); }
+.score-ring::before { content: ""; position: absolute; inset: 10px; border-radius: 50%; background: var(--surface); }
+.score-ring span { position: relative; font-family: var(--font-display); font-weight: 700; font-size: 2rem; }
+.score-ring small { font-size: .9rem; font-weight: 600; color: var(--text-2); }
+.teach-cols { display: grid; gap: 16px; }
+.teach-block .teach-h { font-weight: 700; font-size: .92rem; margin-bottom: 7px; }
+.teach-h.good { color: var(--good); } .teach-h.warn { color: var(--accent-2); } .teach-h.bad { color: var(--bad); }
+.teach-block ul { margin: 0 0 0 20px; display: flex; flex-direction: column; gap: 5px; color: var(--text-2); font-size: .93rem; line-height: 1.55; }
+.teach-tip { margin-top: 16px; padding: 13px 15px; background: var(--accent-weak); border-radius: var(--radius-sm); font-size: .93rem; }
+
 /* Overlay (busy) */
 .overlay { position: fixed; inset: 0; z-index: 200; display: grid; place-content: center; justify-items: center; gap: 16px;
   background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: blur(4px); }

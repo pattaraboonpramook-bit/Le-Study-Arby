@@ -28,8 +28,12 @@ const state = {
   fc: { order: [], i: 0, flipped: false },
   quiz: { answers: {} },
   chat: null,               // loaded lazily
+  feynman: null,            // teach-back result
+  feynmanText: "",          // teach-back explanation draft
   authMode: "signin",
 };
+
+let dictation = null;       // speech-to-text for teach-back (separate from capture)
 
 let recognition = null;
 let recording = false;
@@ -491,13 +495,15 @@ function openNoteObject(note) {
   state.fc = { order: (note.flashcards || []).map((_, i) => i), i: 0, flipped: false };
   state.quiz = { answers: {} };
   state.chat = null;
+  state.feynman = null;
+  state.feynmanText = "";
   render();
 }
 
 function noteHTML() {
   const n = state.current;
   const tabs = [
-    ["notes", "Notes"], ["flashcards", "Flashcards"], ["quiz", "Quiz"], ["chat", "Chat"],
+    ["notes", "Notes"], ["flashcards", "Flashcards"], ["quiz", "Quiz"], ["teach", "Teach-back"], ["chat", "Chat"],
   ].map(([k, label]) => `<button data-tab="${k}" class="${state.noteTab === k ? "active" : ""}">${label}</button>`).join("");
 
   return `<div>
@@ -530,12 +536,14 @@ function syncTabActive() {
 }
 
 function renderNotePanel() {
+  stopDictation();
   const p = $("#note-panel");
   if (!p) return;
   const tab = state.noteTab;
   if (tab === "notes") p.innerHTML = notesTabHTML();
   else if (tab === "flashcards") { p.innerHTML = flashTabHTML(); wireFlash(); }
   else if (tab === "quiz") { p.innerHTML = quizTabHTML(); wireQuiz(); }
+  else if (tab === "teach") { p.innerHTML = teachTabHTML(); wireTeach(); }
   else if (tab === "chat") { p.innerHTML = `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`; loadAndRenderChat(); }
   if (tab === "notes") wireNotesTab();
 }
@@ -676,6 +684,98 @@ async function generateQuiz() {
     state.quiz = { answers: {} };
     renderNotePanel();
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
+}
+
+// Teach-back tab (Feynman technique)
+function teachTabHTML() {
+  const n = state.current;
+  const material = (n.notes_md || n.transcript || "").trim();
+  if (!material) {
+    return genCTA("🧑‍🏫", "Nothing to teach yet", "Generate notes first, then explain them back in your own words.", "gen-notes-teach", "Go to Notes");
+  }
+  return `<div class="panel teach">
+    <p style="color:var(--text-2);margin-bottom:14px">Explain <strong>${escapeHtml(n.title)}</strong> in your own words — like you're teaching a friend. Retrieving it from memory is what makes it stick; then I'll score your understanding and show your gaps.</p>
+    <div style="position:relative">
+      <textarea class="input" id="feynman-input" style="min-height:170px" placeholder="Start explaining in your own words… (or tap the mic to speak)">${escapeHtml(state.feynmanText || "")}</textarea>
+      <button class="btn btn-icon btn-ghost" id="feynman-mic" title="Speak your explanation" aria-label="Speak" style="position:absolute;right:10px;bottom:10px">🎤</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-primary" id="feynman-grade">Grade my understanding</button>
+    </div>
+    <div id="feynman-result">${state.feynman ? feynmanResultHTML(state.feynman) : ""}</div>
+  </div>`;
+}
+
+function feynmanResultHTML(r) {
+  const score = Math.max(0, Math.min(100, Math.round(Number(r.score) || 0)));
+  const ring = score >= 80 ? "var(--good)" : score >= 50 ? "var(--accent-2)" : "var(--bad)";
+  const verdict = score >= 80 ? "Strong understanding 🎉" : score >= 50 ? "Getting there — mind the gaps." : "Worth another pass.";
+  const block = (title, arr, cls) =>
+    (arr && arr.length) ? `<div class="teach-block"><div class="teach-h ${cls}">${title}</div><ul>${arr.map((x) => `<li>${escapeHtml(String(x))}</li>`).join("")}</ul></div>` : "";
+  return `<div class="teach-result">
+    <div class="score-ring" style="--val:${score};--ring:${ring}"><span>${score}<small>%</small></span></div>
+    <p style="text-align:center;color:var(--text-2);margin:-4px 0 16px">${verdict}</p>
+    <div class="teach-cols">
+      ${block("✓ You nailed", r.nailed, "good")}
+      ${block("△ Gaps to review", r.gaps, "warn")}
+      ${block("✗ Misconceptions", r.misconceptions, "bad")}
+    </div>
+    ${r.tip ? `<div class="teach-tip">💡 ${escapeHtml(String(r.tip))}</div>` : ""}
+  </div>`;
+}
+
+function wireTeach() {
+  const g = $("#gen-notes-teach");
+  if (g) { g.onclick = () => { state.noteTab = "notes"; renderNotePanel(); syncTabActive(); }; return; }
+  const ta = $("#feynman-input");
+  if (ta) ta.oninput = () => { state.feynmanText = ta.value; };
+  const mic = $("#feynman-mic");
+  if (mic) mic.onclick = () => dictateInto(ta, mic);
+  const grade = $("#feynman-grade");
+  if (grade) grade.onclick = gradeFeynman;
+}
+
+async function gradeFeynman() {
+  const ta = $("#feynman-input");
+  const explanation = (ta?.value || "").trim();
+  if (explanation.length < 15) { toast("Write a bit more of your explanation first.", "error"); return; }
+  state.feynmanText = explanation;
+  stopDictation();
+  busy(true, "Grading your understanding…");
+  try {
+    const r = await aiGenerate("feynman", { context: state.current.notes_md || state.current.transcript, explanation });
+    state.feynman = r;
+    renderNotePanel();
+    $("#feynman-result")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (err) { toast(err.message, "error"); } finally { busy(false); }
+}
+
+// Voice dictation into a textarea (independent of the capture recorder).
+function dictateInto(ta, btn) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast("Voice input isn't supported in this browser.", "error"); return; }
+  if (dictation) { stopDictation(); btn.classList.remove("recording"); return; }
+  dictation = new SR();
+  dictation.continuous = true;
+  dictation.interimResults = false;
+  dictation.lang = "en-US";
+  dictation.onresult = (e) => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        const t = e.results[i][0].transcript.trim();
+        ta.value += (ta.value && !ta.value.endsWith(" ") ? " " : "") + t;
+        state.feynmanText = ta.value;
+      }
+    }
+  };
+  dictation.onend = () => { if (dictation) { try { dictation.start(); } catch {} } };
+  dictation.onerror = () => { stopDictation(); btn.classList.remove("recording"); };
+  try { dictation.start(); btn.classList.add("recording"); }
+  catch { toast("Couldn't start the mic.", "error"); }
+}
+
+function stopDictation() {
+  if (dictation) { try { dictation.stop(); } catch {} dictation = null; }
 }
 
 // Chat tab

@@ -52,6 +52,11 @@ Rules: exactly 4 options per question; "answer" is the 0-based index of the corr
 
 const CHAT_SYSTEM = `You are a friendly, sharp study tutor. Answer the student's questions using their study notes below as your primary source. Be clear and concise, use short examples where they help, and format with Markdown when useful. If the notes don't cover something, say so briefly and then give your best general explanation. Don't make up specifics that would appear in their course if they aren't in the notes.`;
 
+const FEYNMAN_SYSTEM = `You are a supportive but rigorous tutor using the Feynman technique. A student has tried to explain a topic in their own words. Compare their explanation to the REFERENCE NOTES and judge how well they actually understand it.
+Return ONLY a JSON object (no prose, no code fences):
+{"score": <integer 0-100, overall understanding>, "nailed": [<up to 5 short strings: things they explained correctly>], "gaps": [<up to 5 short strings: important points they missed or were too vague on>], "misconceptions": [<up to 3 short strings: things they stated incorrectly; empty array if none>], "tip": "<one specific, encouraging sentence on what to review or do next>"}
+Be fair: reward correct understanding even when worded differently or informally, and don't penalize missing minor trivia. Judge only against the reference notes.`;
+
 const TASKS = {
   notes:      { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
   lesson:     { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
@@ -59,6 +64,7 @@ const TASKS = {
   flashcards: { system: FLASHCARDS_SYSTEM, max_tokens: 4000, json: true },
   quiz:       { system: QUIZ_SYSTEM,       max_tokens: 4000, json: true },
   chat:       { system: CHAT_SYSTEM,       max_tokens: 4000, json: false },
+  feynman:    { system: FEYNMAN_SYSTEM,    max_tokens: 2000, json: true },
 };
 
 function extractJson(text) {
@@ -87,6 +93,16 @@ function buildBody(task, payload, cfg) {
         { file_data: { file_uri: String(payload?.videoUrl || "") } },
         { text: "Turn this video into a structured lesson, following the system instructions exactly." },
       ] }],
+      generationConfig,
+    };
+  }
+
+  if (task === "feynman") {
+    const context = String(payload?.context || "").slice(0, MAX_SOURCE);
+    const explanation = String(payload?.explanation || "").trim();
+    return {
+      system_instruction: { parts: [{ text: `${cfg.system}\n\nREFERENCE NOTES:\n\n${context}` }] },
+      contents: [{ role: "user", parts: [{ text: `MY EXPLANATION:\n\n${explanation}` }] }],
       generationConfig,
     };
   }
