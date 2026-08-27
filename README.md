@@ -1,0 +1,75 @@
+# ✺ Recall — AI Study Notes
+
+Turn any lecture, pasted text, or YouTube transcript into clean study **notes**, **flashcards**, and **quizzes** — then **chat** with your material. Installable as an app (PWA).
+
+**Pure static site** — same shape as MedPath/LexPath: just HTML/CSS/JS, no build, no server. Deploy it the exact same way you deploy the other apps.
+
+---
+
+## The one thing you must do: add your (free) Gemini key
+
+The other apps (Doctor, Lawyer) don't use a key because they don't use real AI. Recall does — it calls **Google Gemini** to actually understand your material — and that needs a key. Gemini has a **free tier** (no credit card).
+
+1. Get a free key at **[aistudio.google.com/apikey](https://aistudio.google.com/apikey)** → **Create API key**.
+2. Open **[ai-config.js](ai-config.js)** and paste it in:
+   ```js
+   export const GEMINI_API_KEY = "AIza...your key...";
+   ```
+3. That's it. Everything else already works.
+
+> ⚠ **Because this is a static site, the key ships in the page and is visible to anyone who opens your deployed URL.** With a *free* key that's low-stakes — worst case someone uses your free quota. If that happens, delete the key in AI Studio and paste a new one.
+
+---
+
+## Deploy
+
+Exactly like your other apps — it's a static site:
+
+- **Vercel:** import the `Recall` folder (or run `vercel`). No environment variables, no build settings. `vercel.json` already sets a static build.
+- Or drag the folder into any static host (Netlify, GitHub Pages, etc.).
+
+Open the URL and go. On the deployed HTTPS URL, recording and "Install app" work too.
+
+---
+
+## Features
+
+- 🎙 **Record & transcribe** a lecture live (Web Speech API — Chrome/Edge; works on the deployed HTTPS site or `localhost`).
+- 📄 **Paste** any text → notes.
+- ▶ **YouTube → lesson** — paste the video's transcript (video **⋯ → Show transcript → copy**) and it becomes a structured lesson. (Auto-fetch isn't possible from a static site — YouTube blocks it — so you paste the transcript.)
+- ✺ **Turbo notes**, 🎴 **flashcards**, ❓ **quizzes**, 💬 **chat with your notes**.
+- 📱 Installable PWA, light/dark themes.
+
+## Storage
+
+- **Local by default** — notes save in your browser, zero setup.
+- **Optional cloud sync** — add your Supabase URL + anon key in [supabase.js](supabase.js) and run [supabase/schema.sql](supabase/schema.sql). Then notes sync across devices with accounts. (Same pattern the other apps use for Supabase.)
+
+---
+
+## Trying it locally
+
+Because it uses ES modules and calls the Anthropic API, open it through a tiny static server rather than `file://` (any will do), e.g. from the `Recall` folder:
+
+```powershell
+npx serve .      # then open the printed http://localhost:... URL
+```
+
+Recording, install, and the AI calls all work from `localhost` and from your deployed HTTPS URL.
+
+---
+
+## Project structure
+
+| Path | Purpose |
+|------|---------|
+| `index.html` | App shell |
+| `app.js` | The whole app: auth, capture, notes/flashcards/quiz/chat |
+| `ai.js` | Calls Google Gemini directly from the browser |
+| `ai-config.js` | **Your Gemini key + model** |
+| `store.js` / `local.js` | Data facade — local (browser) or Supabase backend |
+| `supabase.js` | Optional cloud sync (add keys) |
+| `supabase/schema.sql` | Tables + row-level security (only if you use Supabase) |
+| `styles.css` | Theme + components (light/dark) |
+| `manifest.webmanifest`, `sw.js`, `icons/` | PWA install + offline |
+| `vercel.json` | Static-build config |

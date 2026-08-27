@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Recall — AI Study Notes</title>
+  <meta name="description" content="Turn any lecture, PDF, or YouTube video into clean notes, flashcards, and quizzes." />
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0e0c17" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f7f5ef" media="(prefers-color-scheme: light)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Recall" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app" aria-live="polite">
+    <!-- Rendered by app.js -->
+    <div class="boot">
+      <div class="boot-logo">✺</div>
+      <p>Loading Recall…</p>
+    </div>
+  </div>
+
+  <noscript>
+    <div style="max-width:640px;margin:12vh auto;padding:0 24px;font-family:system-ui,sans-serif;text-align:center;">
+      <h1>Recall needs JavaScript</h1>
+      <p>Please enable JavaScript to use this app.</p>
+    </div>
+  </noscript>
+
+  <!-- Toast host -->
+  <div id="toast-host" aria-live="assertive"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
