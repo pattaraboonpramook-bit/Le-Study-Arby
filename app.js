@@ -6,7 +6,7 @@ import {
   listNotes, getNote, createNote, updateNote, deleteNote,
   listChat, addChat,
 } from "./store.js";
-import { generate } from "./ai.js";
+import { generate, hasGeminiKey, getGeminiKey, setGeminiKey } from "./ai.js";
 
 const app = document.getElementById("app");
 
@@ -66,6 +66,32 @@ function busy(on, label = "Working…") {
     o.innerHTML = `<div class="spinner"></div><p>${escapeHtml(label)}</p>`;
   } else if (o) {
     o.remove();
+  }
+}
+
+// Ask for the Gemini key (saved in this browser only). Returns true if we have one.
+async function ensureKey() {
+  if (hasGeminiKey()) return true;
+  const k = window.prompt(
+    "Paste your free Gemini API key to enable AI.\nGet one at aistudio.google.com/apikey — it's saved only in this browser.",
+    ""
+  );
+  if (k && k.trim().length > 20) { setGeminiKey(k.trim()); toast("Key saved on this device ✓", "success"); return true; }
+  if (k !== null) toast("That doesn't look like a valid key.", "error");
+  return false;
+}
+
+// Run an AI task, prompting for the key first if it's missing.
+async function aiGenerate(task, payload) {
+  if (!hasGeminiKey() && !(await ensureKey())) throw new Error("Add your Gemini API key to use AI features.");
+  try {
+    return await generate(task, payload);
+  } catch (e) {
+    if (e.code === "NO_KEY") {
+      if (await ensureKey()) return await generate(task, payload);
+      throw new Error("Add your Gemini API key to use AI features.");
+    }
+    throw e;
   }
 }
 
@@ -217,12 +243,18 @@ function wireTopbar() {
     menu.id = "user-menu";
     menu.innerHTML =
       `<div style="padding:8px 12px;color:var(--muted);font-size:.8rem;word-break:break-all">${escapeHtml(state.user.email)}</div>
-       <div class="divider"></div>` +
+       <div class="divider"></div>
+       <button id="menu-key">🔑 ${hasGeminiKey() ? "Change" : "Add"} Gemini key</button>` +
       (installEvent ? `<button id="menu-install">⬇ Install app</button>` : "") +
       (backend === "local"
         ? `<button id="menu-clear" class="btn-danger">🗑 Clear local data</button>`
         : `<button id="menu-signout" class="btn-danger">⎋ Sign out</button>`);
     avatar.parentElement.appendChild(menu);
+    $("#menu-key").onclick = () => {
+      menu.remove();
+      const k = window.prompt("Paste your Gemini API key (from aistudio.google.com/apikey).\nSaved only in this browser.", getGeminiKey());
+      if (k !== null) { setGeminiKey(k); toast(k.trim().length > 20 ? "Key saved ✓" : "Key cleared", "success"); }
+    };
     if (installEvent) $("#menu-install").onclick = async () => { menu.remove(); installEvent.prompt(); installEvent = null; };
     if (backend === "local") {
       $("#menu-clear").onclick = () => {
@@ -412,7 +444,7 @@ async function runTurbo() {
   const task = isYouTube ? "lesson" : "notes";
   busy(true, isYouTube ? "Building your lesson…" : "Turbo is reading your material…");
   try {
-    const notes_md = await generate(task, { source });
+    const notes_md = await aiGenerate(task, { source });
     const note = await createNote({
       title: titleFromMarkdown(notes_md, state.ytTitle || "Untitled note"),
       source_type: isYouTube ? "youtube" : (mode === "record" ? "record" : "paste"),
@@ -523,7 +555,7 @@ async function generateNotes() {
   if (!source) { toast("Nothing to summarize.", "error"); return; }
   busy(true, "Writing your notes…");
   try {
-    const result = await generate("notes", { source });
+    const result = await aiGenerate("notes", { source });
     await patchNote({ notes_md: result, title: titleFromMarkdown(result, n.title) });
     renderNotePanel();
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
@@ -570,7 +602,7 @@ async function generateFlashcards() {
   const n = state.current;
   busy(true, "Making flashcards…");
   try {
-    const result = await generate("flashcards", { source: n.notes_md || n.transcript });
+    const result = await aiGenerate("flashcards", { source: n.notes_md || n.transcript });
     const cards = (Array.isArray(result) ? result : []).filter((c) => c && c.front && c.back);
     if (!cards.length) throw new Error("No cards were generated. Try again.");
     await patchNote({ flashcards: cards });
@@ -630,7 +662,7 @@ async function generateQuiz() {
   const n = state.current;
   busy(true, "Writing quiz questions…");
   try {
-    const result = await generate("quiz", { source: n.notes_md || n.transcript });
+    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript });
     const quiz = (Array.isArray(result) ? result : []).filter(
       (q) => q && q.question && Array.isArray(q.options) && q.options.length >= 2 && Number.isInteger(q.answer));
     if (!quiz.length) throw new Error("No questions were generated. Try again.");
@@ -680,7 +712,7 @@ async function onChatSubmit(e) {
   try {
     addChat(state.current.id, "user", q).catch(() => {}); // fire-and-forget persistence
     const history = state.chat.slice(0, -1).slice(-10);
-    const result = await generate("chat", {
+    const result = await aiGenerate("chat", {
       context: state.current.notes_md || state.current.transcript,
       history,
       question: q,

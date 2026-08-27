@@ -1,21 +1,13 @@
 // ai-config.js — Recall AI settings (Google Gemini, free tier)
 // ─────────────────────────────────────────────────────────────────────────────
-// Paste your free Gemini API key below.
-//   Get it at: https://aistudio.google.com/apikey  (Create API key → copy)
-//   The key starts with "AIza...". No credit card needed for the free tier.
+// Your Gemini key is NOT stored in the code. You paste it into the app itself
+// (the first time you use an AI feature, or from the account menu), and it's
+// saved privately in your browser — so it never goes into the repo or the
+// deployed page, and can't be scraped by other visitors.
 //
-// ⚠ This is a static site, so the key ships inside the page and is visible to
-// anyone who opens your deployed URL. With a FREE key that's low-stakes — worst
-// case someone uses up your free quota. If that happens, delete the key in AI
-// Studio and paste a new one here.
-//
-// Privacy note: Google's free tier may use your inputs to improve their models.
-// Fine for lecture notes; just so you know.
+// Get a free key at: https://aistudio.google.com/apikey  (Create API key)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY";
-
-// Free, fast model. You can change this to another Gemini "flash" model later.
-export const GEMINI_MODEL = "gemini-2.0-flash";
-
-export const isAIConfigured = GEMINI_API_KEY.startsWith("AIza");
+// Current free, fast model. If you ever get a "model not available" error,
+// update this (e.g. to "gemini-flash-latest").
+export const GEMINI_MODEL = "gemini-3.6-flash";

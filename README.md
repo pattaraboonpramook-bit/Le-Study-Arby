@@ -8,16 +8,12 @@ Turn any lecture, pasted text, or YouTube transcript into clean study **notes**,
 
 ## The one thing you must do: add your (free) Gemini key
 
-The other apps (Doctor, Lawyer) don't use a key because they don't use real AI. Recall does — it calls **Google Gemini** to actually understand your material — and that needs a key. Gemini has a **free tier** (no credit card).
+The other apps (Doctor, Lawyer) don't use a key because they don't use real AI. Recall does — it calls **Google Gemini**. Gemini has a **free tier** (no credit card).
 
-1. Get a free key at **[aistudio.google.com/apikey](https://aistudio.google.com/apikey)** → **Create API key**.
-2. Open **[ai-config.js](ai-config.js)** and paste it in:
-   ```js
-   export const GEMINI_API_KEY = "AIza...your key...";
-   ```
-3. That's it. Everything else already works.
+1. Get a free key at **[aistudio.google.com/apikey](https://aistudio.google.com/apikey)** → **Create API key**. (New keys start with `AQ.`; older ones `AIza`.)
+2. Open the app. The first time you press an AI button — or via the account menu (top-right ✺) → **Add Gemini key** — it asks for the key. Paste it.
 
-> ⚠ **Because this is a static site, the key ships in the page and is visible to anyone who opens your deployed URL.** With a *free* key that's low-stakes — worst case someone uses your free quota. If that happens, delete the key in AI Studio and paste a new one.
+That's it. Your key is saved **only in your browser** — never in the code, the repo, or the deployed page, so other visitors can't see it. Each device/browser you use enters it once.
 
 ---
 
@@ -66,7 +62,7 @@ Recording, install, and the AI calls all work from `localhost` and from your dep
 | `index.html` | App shell |
 | `app.js` | The whole app: auth, capture, notes/flashcards/quiz/chat |
 | `ai.js` | Calls Google Gemini directly from the browser |
-| `ai-config.js` | **Your Gemini key + model** |
+| `ai-config.js` | Gemini model name (your key is entered in-app, not here) |
 | `store.js` / `local.js` | Data facade — local (browser) or Supabase backend |
 | `supabase.js` | Optional cloud sync (add keys) |
 | `supabase/schema.sql` | Tables + row-level security (only if you use Supabase) |

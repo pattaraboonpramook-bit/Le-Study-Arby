@@ -1,9 +1,21 @@
 // ai.js — client-side AI calls via Google Gemini (free tier).
 // Calls the Gemini API directly from the browser using the key in ai-config.js.
 // Tasks: notes | lesson | flashcards | quiz | chat
-import { GEMINI_API_KEY, GEMINI_MODEL, isAIConfigured } from "./ai-config.js";
+import { GEMINI_MODEL } from "./ai-config.js";
 
 const MAX_SOURCE = 600_000;
+
+// ── API key — stored privately in this browser (never in the code/repo) ──────
+const KEY_LS = "recall_gemini_key";
+export function getGeminiKey() {
+  try { return (localStorage.getItem(KEY_LS) || "").trim(); } catch { return ""; }
+}
+export function setGeminiKey(k) {
+  try { localStorage.setItem(KEY_LS, (k || "").trim()); } catch {}
+}
+export function hasGeminiKey() {
+  return getGeminiKey().length > 20;
+}
 
 const NOTES_SYSTEM = `You are an expert study-notes creator for students. Turn the raw material the student gives you — a lecture transcript, pasted text, or messy notes — into clean, faithful, well-structured study notes in GitHub-flavoured Markdown.
 
@@ -59,7 +71,7 @@ function extractJson(text) {
 }
 
 function endpoint() {
-  return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+  return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(getGeminiKey())}`;
 }
 
 function buildBody(task, payload, cfg) {
@@ -132,7 +144,11 @@ function textFrom(data) {
 // Public: run an AI task. Returns Markdown text (notes/lesson/chat) or a parsed
 // array (flashcards/quiz). Throws Error with a friendly .message on failure.
 export async function generate(task, payload) {
-  if (!isAIConfigured) throw new Error("Add your Gemini API key in ai-config.js to use AI features.");
+  if (!hasGeminiKey()) {
+    const e = new Error("No Gemini API key set.");
+    e.code = "NO_KEY";
+    throw e;
+  }
   const cfg = TASKS[task];
   if (!cfg) throw new Error(`Unknown task: ${task}`);
 
