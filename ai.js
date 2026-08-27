@@ -55,6 +55,7 @@ const CHAT_SYSTEM = `You are a friendly, sharp study tutor. Answer the student's
 const TASKS = {
   notes:      { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
   lesson:     { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
+  video:      { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
   flashcards: { system: FLASHCARDS_SYSTEM, max_tokens: 4000, json: true },
   quiz:       { system: QUIZ_SYSTEM,       max_tokens: 4000, json: true },
   chat:       { system: CHAT_SYSTEM,       max_tokens: 4000, json: false },
@@ -77,6 +78,18 @@ function endpoint() {
 function buildBody(task, payload, cfg) {
   const generationConfig = { maxOutputTokens: cfg.max_tokens, temperature: 0.7 };
   if (cfg.json) generationConfig.responseMimeType = "application/json";
+
+  if (task === "video") {
+    // Gemini watches the YouTube video directly (audio + visuals).
+    return {
+      system_instruction: { parts: [{ text: cfg.system }] },
+      contents: [{ role: "user", parts: [
+        { file_data: { file_uri: String(payload?.videoUrl || "") } },
+        { text: "Turn this video into a structured lesson, following the system instructions exactly." },
+      ] }],
+      generationConfig,
+    };
+  }
 
   if (task === "chat") {
     const context = String(payload?.context || "").slice(0, MAX_SOURCE);

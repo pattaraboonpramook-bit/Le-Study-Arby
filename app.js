@@ -346,9 +346,9 @@ function captureHTML() {
   } else if (mode === "paste") {
     body = `<textarea class="input" id="paste-area" style="min-height:280px" placeholder="Paste your lecture transcript, textbook section, or messy notes here…">${escapeHtml(state.transcript)}</textarea>`;
   } else {
-    body = `<input class="input" id="yt-url" placeholder="YouTube link (optional — saved for reference)" value="${escapeHtml(state.sourceRef || "")}" />
-      <p style="color:var(--muted);margin:12px 0 8px;font-size:.9rem">On the video, click <strong>⋯ More → Show transcript</strong>, copy it, and paste it below — then press “Make lesson”.</p>
-      <textarea class="input" id="yt-manual" style="min-height:240px" placeholder="Paste the video transcript here…">${escapeHtml(state.ytManual || "")}</textarea>`;
+    body = `<input class="input" id="yt-url" placeholder="Paste a YouTube link…" value="${escapeHtml(state.sourceRef || "")}" />
+      <p style="color:var(--muted);margin:12px 0 8px;font-size:.9rem">Paste a link and press <strong>Make lesson</strong> — Recall watches the video (audio + visuals) and writes the lesson. Very long videos may hit free-tier limits; if so, paste the transcript below as a fallback (video <strong>⋯ → Show transcript</strong>).</p>
+      <textarea class="input" id="yt-manual" style="min-height:170px" placeholder="Optional fallback: paste the transcript here…">${escapeHtml(state.ytManual || "")}</textarea>`;
   }
 
   const canTurbo = state.transcript.trim().length > 0 || mode === "paste" || mode === "youtube";
@@ -433,23 +433,29 @@ function stopRecognition() {
 async function runTurbo() {
   const mode = state.captureMode;
   const isYouTube = mode === "youtube";
-  let source;
-  if (isYouTube) {
-    source = ($("#yt-manual")?.value || "").trim();
-    const yu = $("#yt-url"); if (yu) state.sourceRef = yu.value.trim() || null;
-  } else if (mode === "paste") source = ($("#paste-area")?.value || "").trim();
-  else source = state.transcript.trim();
-  if (!source) { toast(isYouTube ? "Paste the video transcript first." : "Add some material first.", "error"); return; }
+  let task, payload, transcript = "", busyLabel;
 
-  const task = isYouTube ? "lesson" : "notes";
-  busy(true, isYouTube ? "Building your lesson…" : "Turbo is reading your material…");
+  if (isYouTube) {
+    const manual = ($("#yt-manual")?.value || "").trim();
+    const url = ($("#yt-url")?.value || "").trim();
+    state.sourceRef = url || null;
+    if (manual) { task = "lesson"; payload = { source: manual }; transcript = manual; busyLabel = "Building your lesson…"; }
+    else if (url) { task = "video"; payload = { videoUrl: url }; busyLabel = "Watching the video…"; }
+    else { toast("Paste a YouTube link (or a transcript) first.", "error"); return; }
+  } else {
+    const source = mode === "paste" ? ($("#paste-area")?.value || "").trim() : state.transcript.trim();
+    if (!source) { toast("Add some material first.", "error"); return; }
+    task = "notes"; payload = { source }; transcript = source; busyLabel = "Turbo is reading your material…";
+  }
+
+  busy(true, busyLabel);
   try {
-    const notes_md = await aiGenerate(task, { source });
+    const notes_md = await aiGenerate(task, payload);
     const note = await createNote({
       title: titleFromMarkdown(notes_md, state.ytTitle || "Untitled note"),
       source_type: isYouTube ? "youtube" : (mode === "record" ? "record" : "paste"),
       source_ref: state.sourceRef || null,
-      transcript: source,
+      transcript,
       notes_md,
       flashcards: [],
       quiz: [],

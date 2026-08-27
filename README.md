@@ -32,7 +32,7 @@ Open the URL and go. On the deployed HTTPS URL, recording and "Install app" work
 
 - 🎙 **Record & transcribe** a lecture live (Web Speech API — Chrome/Edge; works on the deployed HTTPS site or `localhost`).
 - 📄 **Paste** any text → notes.
-- ▶ **YouTube → lesson** — paste the video's transcript (video **⋯ → Show transcript → copy**) and it becomes a structured lesson. (Auto-fetch isn't possible from a static site — YouTube blocks it — so you paste the transcript.)
+- ▶ **YouTube → lesson** — paste a link and Gemini **watches the video** (audio + visuals) to build a structured lesson. (Very long videos can exceed the free tier; if so, paste the transcript as a fallback — video **⋯ → Show transcript**.)
 - ✺ **Turbo notes**, 🎴 **flashcards**, ❓ **quizzes**, 💬 **chat with your notes**.
 - 📱 Installable PWA, light/dark themes.
 
