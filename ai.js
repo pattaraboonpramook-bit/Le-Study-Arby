@@ -81,6 +81,19 @@ function endpoint() {
   return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(getGeminiKey())}`;
 }
 
+// Normalize any YouTube URL to the clean form Gemini accepts. Extra params like
+// &t= (timestamp) or &list= (playlist) make Gemini reject the request, and they
+// get added automatically when you copy a link from a playlist or at a timestamp.
+function canonicalYouTube(url) {
+  const s = String(url || "").trim();
+  const id =
+    (s.match(/[?&]v=([a-zA-Z0-9_-]{11})/) || [])[1] ||
+    (s.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/) || [])[1] ||
+    (s.match(/\/(?:embed|shorts|live|v)\/([a-zA-Z0-9_-]{11})/) || [])[1] ||
+    (s.match(/^([a-zA-Z0-9_-]{11})$/) || [])[1];
+  return id ? `https://www.youtube.com/watch?v=${id}` : s;
+}
+
 function buildBody(task, payload, cfg) {
   const generationConfig = { maxOutputTokens: cfg.max_tokens, temperature: 0.7 };
   if (cfg.json) generationConfig.responseMimeType = "application/json";
@@ -90,7 +103,7 @@ function buildBody(task, payload, cfg) {
     return {
       system_instruction: { parts: [{ text: cfg.system }] },
       contents: [{ role: "user", parts: [
-        { file_data: { file_uri: String(payload?.videoUrl || "") } },
+        { file_data: { file_uri: canonicalYouTube(payload?.videoUrl) } },
         { text: "Turn this video into a structured lesson, following the system instructions exactly." },
       ] }],
       generationConfig,
