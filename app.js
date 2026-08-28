@@ -350,9 +350,13 @@ function captureHTML() {
   } else if (mode === "paste") {
     body = `<textarea class="input" id="paste-area" style="min-height:280px" placeholder="Paste your lecture transcript, textbook section, or messy notes here…">${escapeHtml(state.transcript)}</textarea>`;
   } else {
-    body = `<input class="input" id="yt-url" placeholder="Paste a YouTube link…" value="${escapeHtml(state.sourceRef || "")}" />
-      <p style="color:var(--muted);margin:12px 0 8px;font-size:.9rem">Paste a link and press <strong>Make lesson</strong> — Recall watches the video (audio + visuals) and writes the lesson. Very long videos may hit free-tier limits; if so, paste the transcript below as a fallback (video <strong>⋯ → Show transcript</strong>).</p>
-      <textarea class="input" id="yt-manual" style="min-height:170px" placeholder="Optional fallback: paste the transcript here…">${escapeHtml(state.ytManual || "")}</textarea>`;
+    body = `<label class="field-label" style="display:block;margin-bottom:6px">YouTube link</label>
+      <input class="input" id="yt-url" placeholder="https://www.youtube.com/watch?v=…" value="${escapeHtml(state.sourceRef || "")}" />
+      <p style="color:var(--muted);margin:10px 0 4px;font-size:.9rem">Paste the link and press <strong>Make lesson</strong> — Recall watches the video for you. <strong>No transcript needed.</strong></p>
+      <details class="yt-fallback" ${state.ytManual ? "open" : ""}>
+        <summary>Very long video or no captions? Paste a transcript instead</summary>
+        <textarea class="input" id="yt-manual" style="min-height:150px;margin-top:10px" placeholder="Optional — video ⋯ → Show transcript → copy → paste here">${escapeHtml(state.ytManual || "")}</textarea>
+      </details>`;
   }
 
   const canTurbo = state.transcript.trim().length > 0 || mode === "paste" || mode === "youtube";

@@ -202,6 +202,13 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .record-btn.recording { background: var(--bad); animation: rec-pulse 1.4s ease-in-out infinite; }
 @keyframes rec-pulse { 0%,100%{box-shadow:0 0 0 0 var(--bad-weak)} 50%{box-shadow:0 0 0 18px transparent} }
 .record-hint { color: var(--muted); font-size: 0.9rem; }
+
+/* YouTube fallback disclosure */
+.yt-fallback { margin-top: 14px; }
+.yt-fallback > summary { cursor: pointer; color: var(--accent); font-size: .88rem; font-weight: 600; list-style: none; user-select: none; }
+.yt-fallback > summary::-webkit-details-marker { display: none; }
+.yt-fallback > summary::before { content: "▸ "; }
+.yt-fallback[open] > summary::before { content: "▾ "; }
 .transcript-box { margin-top: 20px; text-align: left; background: var(--surface-2); border-radius: var(--radius-sm);
   padding: 16px; min-height: 120px; max-height: 320px; overflow-y: auto; line-height: 1.7; white-space: pre-wrap; }
 .transcript-box .interim { color: var(--muted); }
