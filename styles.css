@@ -173,6 +173,9 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
 .page-head h1 { font-family: var(--font-display); font-size: clamp(1.7rem, 4vw, 2.4rem); font-weight: 600; letter-spacing: -0.02em; }
 .page-head p { color: var(--text-2); margin-top: 4px; }
+.streak { font-family: var(--font-body); font-size: .8rem; font-weight: 700; color: var(--accent-2);
+  background: var(--surface-2); border: 1px solid var(--border); padding: 3px 11px; border-radius: 999px;
+  vertical-align: middle; margin-left: 10px; white-space: nowrap; }
 .search { position: relative; flex: 1; min-width: 200px; max-width: 340px; }
 .search input { padding-left: 40px; border-radius: 999px; }
 .search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); }

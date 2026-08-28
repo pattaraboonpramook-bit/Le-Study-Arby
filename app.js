@@ -16,6 +16,7 @@ const state = {
   view: "library",          // library | capture | note
   notes: null,              // null = not loaded yet
   search: "",
+  streak: 1,
   current: null,            // full note object
   noteTab: "notes",         // notes | flashcards | quiz | chat
   captureMode: "record",    // record | paste | youtube
@@ -58,6 +59,17 @@ function toast(msg, type = "") {
   setTimeout(() => t.remove(), 3000);
 }
 
+const BUSY_PHRASES = [
+  "Skimming the boring parts…",
+  "Highlighting what matters…",
+  "Making it make sense…",
+  "Connecting the dots…",
+  "Doing the reading so you don't have to…",
+  "Untangling the jargon…",
+  "Thinking really hard 🤔…",
+  "Turning chaos into notes…",
+];
+let busyTimer = null;
 function busy(on, label = "Working…") {
   let o = document.getElementById("overlay");
   if (on) {
@@ -67,10 +79,69 @@ function busy(on, label = "Working…") {
       o.className = "overlay";
       document.body.appendChild(o);
     }
-    o.innerHTML = `<div class="spinner"></div><p>${escapeHtml(label)}</p>`;
+    o.innerHTML = `<div class="spinner"></div><p id="busy-label">${escapeHtml(label)}</p>`;
+    clearInterval(busyTimer);
+    busyTimer = setInterval(() => {
+      const p = $("#busy-label");
+      if (p) p.textContent = BUSY_PHRASES[Math.floor(Math.random() * BUSY_PHRASES.length)];
+    }, 2200);
   } else if (o) {
+    clearInterval(busyTimer); busyTimer = null;
     o.remove();
   }
+}
+
+const PRAISE = ["Notes ready ✨", "Boom — done 💥", "Served fresh 🍽️", "Go ace it 💪", "Nailed it 🎯"];
+const praise = () => PRAISE[Math.floor(Math.random() * PRAISE.length)];
+
+// Lightweight confetti burst for wins (no deps). Respects reduced-motion.
+function confetti() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const c = document.createElement("canvas");
+  c.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2000";
+  c.width = innerWidth; c.height = innerHeight;
+  document.body.appendChild(c);
+  const ctx = c.getContext("2d");
+  const colors = ["#5b46c9", "#9d88ff", "#b0803f", "#3f8f6b", "#c0503f", "#e8c96e"];
+  const parts = Array.from({ length: 110 }, () => ({
+    x: innerWidth / 2 + (Math.random() - 0.5) * 160, y: innerHeight * 0.32,
+    vx: (Math.random() - 0.5) * 11, vy: Math.random() * -9 - 4,
+    s: Math.random() * 7 + 4, r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.35,
+    col: colors[Math.floor(Math.random() * colors.length)], life: 1,
+  }));
+  let t0 = performance.now();
+  (function frame(t) {
+    const dt = Math.min(32, t - t0) / 16; t0 = t;
+    ctx.clearRect(0, 0, c.width, c.height);
+    let alive = false;
+    for (const p of parts) {
+      p.vy += 0.35 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.r += p.vr * dt; p.life -= 0.008 * dt;
+      if (p.life > 0 && p.y < c.height + 20) {
+        alive = true;
+        ctx.save(); ctx.globalAlpha = Math.max(0, p.life);
+        ctx.translate(p.x, p.y); ctx.rotate(p.r);
+        ctx.fillStyle = p.col; ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.6);
+        ctx.restore();
+      }
+    }
+    if (alive) requestAnimationFrame(frame); else c.remove();
+  })(t0);
+}
+
+// Study streak: counts consecutive days you open Recall.
+function updateStreak() {
+  try {
+    const today = new Date().toDateString();
+    const last = localStorage.getItem("recall_streak_date");
+    let streak = +(localStorage.getItem("recall_streak") || 0);
+    if (last !== today) {
+      const yesterday = new Date(Date.now() - 86400000).toDateString();
+      streak = last === yesterday ? streak + 1 : 1;
+      localStorage.setItem("recall_streak", String(streak));
+      localStorage.setItem("recall_streak_date", today);
+    }
+    return streak || 1;
+  } catch { return 1; }
 }
 
 // Ask for the Gemini key (saved in this browser only). Returns true if we have one.
@@ -278,7 +349,7 @@ function wireTopbar() {
 function libraryHTML() {
   const head = `<div class="page-head">
     <div>
-      <h1>Your notes</h1>
+      <h1>Your notes${state.streak >= 2 ? ` <span class="streak" title="${state.streak}-day study streak">🔥 ${state.streak}</span>` : ""}</h1>
       <p>${state.notes === null ? "Loading…" : `${state.notes.length} note${state.notes.length === 1 ? "" : "s"}`}${backend === "local" ? " · saved on this device" : ""}</p>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -471,7 +542,8 @@ async function runTurbo() {
     // reset capture state
     state.transcript = ""; state.sourceRef = null; state.ytTitle = ""; state.ytManual = ""; state.ytStatus = "";
     openNoteObject(note);
-    toast("Notes ready ✨", "success");
+    toast(praise(), "success");
+    confetti();
   } catch (err) {
     toast(err.message, "error");
   } finally {
@@ -671,7 +743,13 @@ function wireQuiz() {
     const qi = +b.dataset.q;
     if (state.quiz.answers[qi] !== undefined) return;
     state.quiz.answers[qi] = +b.dataset.o;
+    const quiz = state.current.quiz || [];
+    const done = Object.keys(state.quiz.answers).length === quiz.length;
     renderNotePanel();
+    if (done) {
+      const score = quiz.reduce((s, q, i) => s + (state.quiz.answers[i] === q.answer ? 1 : 0), 0);
+      if (quiz.length && score / quiz.length >= 0.7) confetti();
+    }
   }));
   const rt = $("#quiz-retake"); if (rt) rt.onclick = () => { state.quiz = { answers: {} }; renderNotePanel(); };
   const rq = $("#regen-quiz"); if (rq) rq.onclick = () => generateQuiz();
@@ -750,6 +828,7 @@ async function gradeFeynman() {
     const r = await aiGenerate("feynman", { context: state.current.notes_md || state.current.transcript, explanation });
     state.feynman = r;
     renderNotePanel();
+    if ((Number(r.score) || 0) >= 80) confetti();
     $("#feynman-result")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
@@ -893,6 +972,7 @@ if ("serviceWorker" in navigator) {
 }
 
 async function boot() {
+  state.streak = updateStreak();
   onAuthChange((user) => {
     const was = state.user;
     state.user = user;
