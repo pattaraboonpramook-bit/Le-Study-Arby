@@ -176,6 +176,22 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .streak { font-family: var(--font-body); font-size: .8rem; font-weight: 700; color: var(--accent-2);
   background: var(--surface-2); border: 1px solid var(--border); padding: 3px 11px; border-radius: 999px;
   vertical-align: middle; margin-left: 10px; white-space: nowrap; }
+
+/* Admin panel */
+.admin-banner { background: var(--accent-weak); color: var(--accent); padding: 12px 16px;
+  border-radius: var(--radius-sm); font-weight: 600; font-size: .9rem; margin-bottom: 18px; }
+.admin-list { display: flex; flex-direction: column; gap: 10px; }
+.admin-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; box-shadow: var(--shadow); }
+.admin-email { font-weight: 600; word-break: break-all; }
+.admin-meta { color: var(--muted); font-size: .8rem; margin-top: 4px; display: flex; align-items: center; gap: 7px; }
+.admin-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.admin-you { color: var(--muted); font-size: .82rem; font-weight: 600; }
+.role-badge { text-transform: capitalize; font-weight: 700; font-size: .72rem; letter-spacing: .02em; padding: 2px 9px; border-radius: 999px; }
+.role-badge.admin { background: var(--accent-weak); color: var(--accent); }
+.role-badge.member { background: var(--good-weak); color: var(--good); }
+.role-badge.pending { background: var(--surface-2); color: var(--accent-2); }
+.role-badge.blocked { background: var(--bad-weak); color: var(--bad); }
 .search { position: relative; flex: 1; min-width: 200px; max-width: 340px; }
 .search input { padding-left: 40px; border-radius: 999px; }
 .search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); }

@@ -21,4 +21,7 @@ export const updateNote = impl.updateNote;
 export const deleteNote = impl.deleteNote;
 export const listChat = impl.listChat;
 export const addChat = impl.addChat;
+export const getProfile = impl.getProfile;
+export const listUsers = impl.listUsers;
+export const setUserRole = impl.setUserRole;
 export const clearLocalData = local.clearLocalData;

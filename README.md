@@ -39,8 +39,36 @@ Open the URL and go. On the deployed HTTPS URL, recording and "Install app" work
 
 ## Storage
 
-- **Local by default** — notes save in your browser, zero setup.
-- **Optional cloud sync** — add your Supabase URL + anon key in [supabase.js](supabase.js) and run [supabase/schema.sql](supabase/schema.sql). Then notes sync across devices with accounts. (Same pattern the other apps use for Supabase.)
+- **Local by default** — notes save in your browser, zero setup, no accounts. (No access control — anyone who opens the page can use it with their own key.)
+- **Cloud + access control** — configure Supabase (below) to get real accounts, an admin approval list, and cross-device sync.
+
+---
+
+## 🔒 Access control (who can use the app)
+
+> **Important:** a static site *cannot* enforce security in the browser — anyone can read the code and bypass a client-side check. Real access control needs a server that enforces the rules. This app uses **Supabase Row-Level Security (RLS)** for that, so the rules hold even though the front-end is static.
+
+**How it works:** people sign up → they land as **`pending`** and can do *nothing* (the database itself refuses to give them any data) → an **admin** approves them in the **Admin panel** → they become a **`member`**. Admins can **block** (revoke) anyone or **promote** trusted people to admin. Roles are checked by Postgres RLS on every request, so this can't be bypassed from the browser.
+
+**Set it up:**
+1. Create a free project at [supabase.com](https://supabase.com).
+2. **SQL Editor → New query →** paste [supabase/schema.sql](supabase/schema.sql) → **Run**.
+3. **Settings → API →** copy your **Project URL** + **anon public** key into [supabase.js](supabase.js).
+4. **Authentication → Providers → Email →** turn **ON** "Confirm email" (stops people signing up with fake addresses).
+5. **Sign up in the app with *your* email first.** Then in the SQL editor run — with your email — the last line of `schema.sql`:
+   ```sql
+   update public.profiles set role = 'admin' where email = 'YOU@EXAMPLE.COM';
+   ```
+   Reload — you're now the admin, and the **🛡 Admin panel** appears in your account menu.
+6. Everyone else who signs up shows up as **pending** for you to approve (or reject/block).
+
+**Given you don't fully trust this person, some plain advice:**
+- **Stay the only admin.** Never press "Make admin" for someone you don't trust — admins can approve/remove *other* users.
+- **Approve, don't pre-share.** Let them sign up, then approve just their account. Block them instantly if needed — it takes effect on their next request.
+- **Make the GitHub repo private** if you don't want them to have the source code. (Repo → Settings → Change visibility → Private. Vercel still deploys from a private repo.)
+- **Their data is isolated** — RLS means each user only ever sees their *own* notes; one user can't read another's.
+- **Never share your Supabase *service_role* key** (Settings → API). Only the **anon** key goes in the app; the service_role key bypasses all security — keep it secret.
+- The **Gemini key is per-person** — each user enters their own in their own browser, so no one can spend your quota.
 
 ---
 

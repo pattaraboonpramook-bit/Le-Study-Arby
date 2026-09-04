@@ -48,6 +48,34 @@ export function onAuthChange(cb) {
   supabase.auth.onAuthStateChange((_event, session) => cb(session?.user ?? null));
 }
 
+// ── Profiles / access control ────────────────────────────────────────────────
+export async function getProfile() {
+  const user = await getUser();
+  if (!user) return null;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, role, created_at")
+    .eq("id", user.id)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Admin only (RLS enforces that non-admins get nothing / can't change roles).
+export async function listUsers() {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, role, created_at")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+export async function setUserRole(id, role) {
+  const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
+  if (error) throw error;
+}
+
 // ── Notes ────────────────────────────────────────────────────────────────────
 export async function listNotes() {
   const { data, error } = await supabase

@@ -3,6 +3,7 @@
 import {
   backend, clearLocalData,
   signIn, signUp, signOut, getUser, onAuthChange,
+  getProfile, listUsers, setUserRole,
   listNotes, getNote, createNote, updateNote, deleteNote,
   listChat, addChat,
 } from "./store.js";
@@ -13,8 +14,10 @@ const app = document.getElementById("app");
 // ── State ────────────────────────────────────────────────────────────────────
 const state = {
   user: null,
-  view: "library",          // library | capture | note
+  role: null,               // pending | member | admin | blocked (cloud mode)
+  view: "library",          // library | capture | note | admin
   notes: null,              // null = not loaded yet
+  adminUsers: null,         // loaded for the admin panel
   search: "",
   streak: 1,
   current: null,            // full note object
@@ -232,6 +235,10 @@ function toggleTheme() {
 // ═════════════════════════════════════════════════════════════════════════════
 function render() {
   if (!state.user) { app.innerHTML = authHTML(); wireAuth(); return; }
+  // Cloud mode: block anyone who isn't an approved member/admin (server-enforced too).
+  if (backend === "cloud" && state.role !== "member" && state.role !== "admin") {
+    app.innerHTML = gateHTML(); wireGate(); return;
+  }
   app.innerHTML = topbarHTML() + `<main class="wrap" id="main"></main>`;
   wireTopbar();
   renderView();
@@ -243,6 +250,30 @@ function renderView() {
   if (state.view === "library") { main.innerHTML = libraryHTML(); wireLibrary(); }
   else if (state.view === "capture") { main.innerHTML = captureHTML(); wireCapture(); }
   else if (state.view === "note") { main.innerHTML = noteHTML(); wireNote(); }
+  else if (state.view === "admin") { main.innerHTML = adminHTML(); wireAdmin(); }
+}
+
+// ── Access gate (pending / blocked / loading) ────────────────────────────────
+function gateHTML() {
+  const r = state.role;
+  let icon = "✺", title = "Checking your access…", msg = "";
+  if (r === "blocked") {
+    icon = "⛔"; title = "Access revoked";
+    msg = "Your access to this app has been turned off. Contact the administrator if you think this is a mistake.";
+  } else if (r === "pending") {
+    icon = "⏳"; title = "Waiting for approval";
+    msg = "Your account was created and is waiting for an administrator to approve it. You'll be able to sign in once they do.";
+  }
+  return `<div class="auth"><div class="auth-card" style="text-align:center">
+    <div class="auth-logo" style="justify-content:center"><div class="mark">${icon}</div></div>
+    <h1 style="font-size:1.5rem">${title}</h1>
+    ${msg ? `<p class="sub">${msg}</p>` : `<div class="spinner" style="margin:18px auto"></div>`}
+    <div style="font-size:.82rem;color:var(--muted);margin:6px 0 16px;word-break:break-all">${escapeHtml(state.user?.email || "")}</div>
+    <button class="btn btn-outline" id="gate-signout" style="width:100%">Sign out</button>
+  </div></div>`;
+}
+function wireGate() {
+  const b = $("#gate-signout"); if (b) b.onclick = async () => { await signOut(); };
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -320,6 +351,7 @@ function wireTopbar() {
       `<div style="padding:8px 12px;color:var(--muted);font-size:.8rem;word-break:break-all">${escapeHtml(state.user.email)}</div>
        <div class="divider"></div>
        <button id="menu-key">🔑 ${hasGeminiKey() ? "Change" : "Add"} Gemini key</button>` +
+      (state.role === "admin" ? `<button id="menu-admin">🛡 Admin panel</button>` : "") +
       (installEvent ? `<button id="menu-install">⬇ Install app</button>` : "") +
       (backend === "local"
         ? `<button id="menu-clear" class="btn-danger">🗑 Clear local data</button>`
@@ -330,6 +362,7 @@ function wireTopbar() {
       const k = window.prompt("Paste your Gemini API key (from aistudio.google.com/apikey).\nSaved only in this browser.", getGeminiKey());
       if (k !== null) { setGeminiKey(k); toast(k.trim().length > 20 ? "Key saved ✓" : "Key cleared", "success"); }
     };
+    if (state.role === "admin") { const a = $("#menu-admin"); if (a) a.onclick = () => { menu.remove(); goAdmin(); }; }
     if (installEvent) $("#menu-install").onclick = async () => { menu.remove(); installEvent.prompt(); installEvent = null; };
     if (backend === "local") {
       $("#menu-clear").onclick = () => {
@@ -399,6 +432,65 @@ function wireLibrary() {
     const s2 = $("#search"); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); }
   };
   $$(".note-card").forEach((c) => (c.onclick = () => openNote(c.dataset.id)));
+}
+
+// ── Admin panel (admins only; RLS enforces this on the server too) ───────────
+async function goAdmin() {
+  state.view = "admin";
+  state.adminUsers = null;
+  render();
+  try { state.adminUsers = await listUsers(); }
+  catch (err) { toast(err.message, "error"); state.adminUsers = []; }
+  renderView();
+}
+
+function adminHTML() {
+  const users = state.adminUsers;
+  const head = `<div class="page-head">
+    <div><h1>Admin</h1><p>Approve, block, or promote who can use Recall. Changes take effect immediately.</p></div>
+    <button class="btn btn-ghost" id="admin-back">← Back to notes</button>
+  </div>`;
+  if (users === null) return head + `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`;
+  if (!users.length) return head + `<div class="empty"><p>No users yet.</p></div>`;
+
+  const pending = users.filter((u) => u.role === "pending").length;
+  const banner = pending
+    ? `<div class="admin-banner">⏳ ${pending} ${pending === 1 ? "person is" : "people are"} waiting for approval.</div>` : "";
+
+  const btn = (act, label, cls, id) => `<button class="btn btn-sm ${cls}" data-act="${act}" data-id="${id}">${label}</button>`;
+  const rows = users.map((u) => {
+    let actions;
+    if (u.id === state.user.id) actions = `<span class="admin-you">you</span>`;
+    else if (u.role === "pending") actions = btn("approve", "Approve", "btn-primary", u.id) + btn("block", "Reject", "btn-outline", u.id);
+    else if (u.role === "member") actions = btn("promote", "Make admin", "btn-outline", u.id) + btn("block", "Block", "btn-outline btn-danger", u.id);
+    else if (u.role === "admin") actions = btn("demote", "Remove admin", "btn-outline", u.id);
+    else actions = btn("approve", "Restore", "btn-primary", u.id); // blocked
+    return `<div class="admin-row">
+      <div class="admin-user">
+        <div class="admin-email">${escapeHtml(u.email || "—")}</div>
+        <div class="admin-meta"><span class="role-badge ${u.role}">${u.role}</span> · joined ${fmtDate(u.created_at)}</div>
+      </div>
+      <div class="admin-actions">${actions}</div>
+    </div>`;
+  }).join("");
+  return head + banner + `<div class="admin-list">${rows}</div>`;
+}
+
+function wireAdmin() {
+  const back = $("#admin-back"); if (back) back.onclick = goLibrary;
+  const ROLE = { approve: "member", block: "blocked", promote: "admin", demote: "member" };
+  $$("[data-act]").forEach((b) => (b.onclick = async () => {
+    const role = ROLE[b.dataset.act];
+    if (b.dataset.act === "block" && !confirm("Remove this person's access? They won't be able to use the app until you restore them.")) return;
+    if (b.dataset.act === "promote" && !confirm("Make this person an admin? They'll be able to manage users too.")) return;
+    busy(true, "Updating access…");
+    try {
+      await setUserRole(b.dataset.id, role);
+      state.adminUsers = await listUsers();
+      renderView();
+      toast("Access updated", "success");
+    } catch (err) { toast(err.message, "error"); } finally { busy(false); }
+  }));
 }
 
 // ── Capture ──────────────────────────────────────────────────────────────────
@@ -971,16 +1063,28 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 
+// Resolve the signed-in user's role, then route to the app or the access gate.
+async function enterApp() {
+  if (backend === "local") { state.role = "member"; await goLibrary(); return; }
+  state.role = null; render(); // show "checking access…" gate while we load the role
+  try {
+    const profile = await getProfile();
+    state.role = profile?.role || "pending";
+  } catch { state.role = "pending"; }
+  if (state.role === "member" || state.role === "admin") await goLibrary();
+  else render(); // pending / blocked
+}
+
 async function boot() {
   state.streak = updateStreak();
   onAuthChange((user) => {
     const was = state.user;
     state.user = user;
-    if (user && !was) goLibrary();
-    else if (!user) { state.notes = null; state.current = null; render(); }
+    if (user && !was) enterApp();
+    else if (!user) { state.role = null; state.notes = null; state.current = null; render(); }
   });
   state.user = await getUser();
-  if (state.user) await goLibrary();
+  if (state.user) await enterApp();
   else render();
 }
 boot();

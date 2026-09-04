@@ -17,6 +17,11 @@ export async function signIn() { return { user: LOCAL_USER }; }
 export async function signUp() { return { user: LOCAL_USER, session: {} }; }
 export async function signOut() { /* stay signed in in local mode */ }
 
+// ── Profiles (local mode is single-user: always an approved member) ──────────
+export async function getProfile() { return { id: LOCAL_USER.id, email: LOCAL_USER.email, role: "member" }; }
+export async function listUsers() { return []; }
+export async function setUserRole() {}
+
 // ── Notes ────────────────────────────────────────────────────────────────────
 export async function listNotes() {
   return readNotes()
