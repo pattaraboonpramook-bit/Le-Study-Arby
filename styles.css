@@ -309,6 +309,22 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
   padding: 26px; box-shadow: var(--shadow); }
 .quiz-score .num { font-family: var(--font-display); font-size: 2.6rem; font-weight: 700; color: var(--accent); }
 
+/* Podcast */
+.podcast { max-width: 680px; margin: 0 auto; }
+.pod-player { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; padding: 10px 14px; box-shadow: var(--shadow); margin-bottom: 18px; }
+.pod-rate { display: flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--text-2); }
+.pod-rate select { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 4px 8px; color: var(--text); }
+.pod-script { display: flex; flex-direction: column; gap: 10px; }
+.pod-line { display: flex; gap: 12px; padding: 12px 14px; border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid transparent; transition: background .15s, border-color .15s; }
+.pod-line:hover { background: var(--surface-2); }
+.pod-line.speaking { background: var(--accent-weak); border-color: var(--accent); }
+.pod-who { flex-shrink: 0; font-weight: 700; font-size: .8rem; width: 42px; }
+.pod-line.a .pod-who { color: var(--accent); }
+.pod-line.b .pod-who { color: var(--good); }
+.pod-text { line-height: 1.55; }
+
 /* Chat */
 .chat { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; height: min(66vh, 600px); }
 .chat-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 6px 2px 16px; }

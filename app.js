@@ -34,10 +34,12 @@ const state = {
   chat: null,               // loaded lazily
   feynman: null,            // teach-back result
   feynmanText: "",          // teach-back explanation draft
+  podcastScript: null,      // [{speaker,text}] audio-overview script
   authMode: "signin",
 };
 
 let dictation = null;       // speech-to-text for teach-back (separate from capture)
+let ttsState = { playing: false, paused: false, rate: 1, curTurn: 0 }; // podcast playback
 
 let recognition = null;
 let recording = false;
@@ -665,13 +667,15 @@ function openNoteObject(note) {
   state.chat = null;
   state.feynman = null;
   state.feynmanText = "";
+  state.podcastScript = getPodcastLS(note.id);
+  ttsState = { playing: false, paused: false, rate: 1, curTurn: 0 };
   render();
 }
 
 function noteHTML() {
   const n = state.current;
   const tabs = [
-    ["notes", "Notes"], ["flashcards", "Flashcards"], ["quiz", "Quiz"], ["teach", "Teach-back"], ["chat", "Chat"],
+    ["notes", "Notes"], ["flashcards", "Flashcards"], ["quiz", "Quiz"], ["teach", "Teach-back"], ["podcast", "Podcast"], ["chat", "Chat"],
   ].map(([k, label]) => `<button data-tab="${k}" class="${state.noteTab === k ? "active" : ""}">${label}</button>`).join("");
 
   return `<div>
@@ -705,6 +709,7 @@ function syncTabActive() {
 
 function renderNotePanel() {
   stopDictation();
+  stopSpeech();
   const p = $("#note-panel");
   if (!p) return;
   const tab = state.noteTab;
@@ -712,6 +717,7 @@ function renderNotePanel() {
   else if (tab === "flashcards") { p.innerHTML = flashTabHTML(); wireFlash(); }
   else if (tab === "quiz") { p.innerHTML = quizTabHTML(); wireQuiz(); }
   else if (tab === "teach") { p.innerHTML = teachTabHTML(); wireTeach(); }
+  else if (tab === "podcast") { p.innerHTML = podcastTabHTML(); wirePodcast(); }
   else if (tab === "chat") { p.innerHTML = `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`; loadAndRenderChat(); }
   if (tab === "notes") wireNotesTab();
 }
@@ -953,6 +959,121 @@ function stopDictation() {
   if (dictation) { try { dictation.stop(); } catch {} dictation = null; }
 }
 
+// Podcast tab (AI script + browser text-to-speech "audio overview")
+const getPodcastLS = (id) => { try { const s = localStorage.getItem("recall_podcast_" + id); return s ? JSON.parse(s) : null; } catch { return null; } };
+const setPodcastLS = (id, script) => { try { localStorage.setItem("recall_podcast_" + id, JSON.stringify(script)); } catch {} };
+const HOSTS = { A: "Alex", B: "Sam" };
+
+function podcastTabHTML() {
+  const n = state.current;
+  const material = (n.notes_md || n.transcript || "").trim();
+  if (!material) return genCTA("🎧", "Nothing to narrate yet", "Generate notes first, then turn them into a listen-along podcast.", "gen-notes-pod", "Go to Notes");
+  const script = state.podcastScript;
+  if (!script) return genCTA("🎙️", "Podcast mode", "Turn this note into a fun audio overview — two hosts chatting through the key ideas, read aloud so you can study hands-free.", "gen-podcast", "Generate podcast");
+
+  const supported = "speechSynthesis" in window;
+  const lines = script.map((t, i) =>
+    `<div class="pod-line ${t.speaker === "B" ? "b" : "a"}" data-idx="${i}"><span class="pod-who">${HOSTS[t.speaker] || HOSTS.A}</span><span class="pod-text">${escapeHtml(t.text)}</span></div>`).join("");
+  const player = supported
+    ? `<div class="pod-player">
+        <button class="btn btn-primary btn-icon" id="pod-play" aria-label="Play">▶</button>
+        <button class="btn btn-ghost btn-icon" id="pod-stop" aria-label="Stop">■</button>
+        <label class="pod-rate">Speed
+          <select id="pod-rate"><option value="0.8">0.8×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select>
+        </label>
+        <button class="btn btn-outline btn-sm" id="regen-pod" style="margin-left:auto">↻ New script</button>
+      </div>`
+    : `<p style="color:var(--text-2);margin-bottom:12px">Audio playback isn't supported in this browser — here's the script to read:</p>
+       <div style="text-align:right;margin-bottom:8px"><button class="btn btn-outline btn-sm" id="regen-pod">↻ New script</button></div>`;
+  return `<div class="panel podcast">${player}<div class="pod-script" id="pod-script">${lines}</div>
+    <p style="color:var(--muted);font-size:.8rem;margin-top:14px;text-align:center">Voices come from your device — tap a line to start from there.</p></div>`;
+}
+
+function wirePodcast() {
+  const gn = $("#gen-notes-pod"); if (gn) { gn.onclick = () => { state.noteTab = "notes"; renderNotePanel(); syncTabActive(); }; return; }
+  const gp = $("#gen-podcast"); if (gp) { gp.onclick = generatePodcast; return; }
+  const play = $("#pod-play"); if (play) play.onclick = togglePodcast;
+  const stop = $("#pod-stop"); if (stop) stop.onclick = stopPodcast;
+  const rate = $("#pod-rate"); if (rate) rate.onchange = () => { ttsState.rate = parseFloat(rate.value) || 1; };
+  const rg = $("#regen-pod"); if (rg) rg.onclick = generatePodcast;
+  $$(".pod-line").forEach((el) => (el.onclick = () => startPodcast(+el.dataset.idx)));
+}
+
+async function generatePodcast() {
+  const n = state.current;
+  stopSpeech();
+  busy(true, "Recording your podcast…");
+  try {
+    const raw = await aiGenerate("podcast", { source: n.notes_md || n.transcript });
+    const script = (Array.isArray(raw) ? raw : [])
+      .filter((t) => t && t.text)
+      .map((t) => ({ speaker: (t.speaker === "B" || /sam|host ?2|b\b/i.test(String(t.speaker))) ? "B" : "A", text: String(t.text) }));
+    if (!script.length) throw new Error("Couldn't write a script — try again.");
+    state.podcastScript = script;
+    setPodcastLS(n.id, script);
+    renderNotePanel();
+  } catch (err) { toast(err.message, "error"); } finally { busy(false); }
+}
+
+// ── Text-to-speech engine ────────────────────────────────────────────────────
+function pickVoices() {
+  const all = (window.speechSynthesis?.getVoices() || []).filter((v) => /^en/i.test(v.lang));
+  const a = all[0] || null;
+  const b = all.find((v) => v.name !== a?.name) || all[1] || a;
+  return { a, b };
+}
+function setPlayBtn(sym) { const b = $("#pod-play"); if (b) b.textContent = sym; }
+function highlightPodLine(ti) {
+  ttsState.curTurn = ti;
+  $$(".pod-line").forEach((el) => el.classList.toggle("speaking", +el.dataset.idx === ti));
+  const el = $(`.pod-line[data-idx="${ti}"]`);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+function togglePodcast() {
+  const synth = window.speechSynthesis;
+  if (!synth) return;
+  if (ttsState.playing && !ttsState.paused) { synth.pause(); ttsState.paused = true; setPlayBtn("▶"); return; }
+  if (ttsState.playing && ttsState.paused) { synth.resume(); ttsState.paused = false; setPlayBtn("⏸"); return; }
+  startPodcast(ttsState.curTurn || 0);
+}
+function startPodcast(startTurn) {
+  const synth = window.speechSynthesis;
+  const script = state.podcastScript || [];
+  if (!synth || !script.length) return;
+  synth.cancel();
+  ttsState.playing = true; ttsState.paused = false; setPlayBtn("⏸");
+  const voices = pickVoices();
+  const queue = [];
+  script.forEach((turn, ti) => {
+    if (ti < startTurn) return;
+    (String(turn.text).match(/[^.!?]+[.!?]*/g) || [turn.text]).forEach((s) => { if (s.trim()) queue.push({ ti, sp: turn.speaker, text: s.trim() }); });
+  });
+  let qi = 0;
+  (function next() {
+    if (!ttsState.playing) return;
+    if (qi >= queue.length) { finishPodcast(); return; }
+    const item = queue[qi];
+    highlightPodLine(item.ti);
+    const u = new SpeechSynthesisUtterance(item.text);
+    u.rate = ttsState.rate || 1;
+    const v = item.sp === "B" ? voices.b : voices.a;
+    if (v) u.voice = v;
+    u.onend = () => { qi++; next(); };
+    u.onerror = () => { qi++; next(); };
+    synth.speak(u);
+  })();
+}
+function finishPodcast() {
+  ttsState.playing = false; ttsState.paused = false; ttsState.curTurn = 0;
+  setPlayBtn("▶");
+  $$(".pod-line").forEach((el) => el.classList.remove("speaking"));
+}
+function stopPodcast() { stopSpeech(); setPlayBtn("▶"); $$(".pod-line").forEach((el) => el.classList.remove("speaking")); }
+function stopSpeech() {
+  if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch {} }
+  ttsState.playing = false; ttsState.paused = false;
+}
+
 // Chat tab
 async function loadAndRenderChat() {
   try {
@@ -1047,6 +1168,7 @@ function goCapture() {
 }
 async function goLibrary() {
   stopRecognition();
+  stopSpeech();
   state.view = "library";
   state.notes = null;
   render();
@@ -1062,6 +1184,13 @@ window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); inst
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
+
+// Warm up TTS voices (some browsers load them asynchronously).
+if (window.speechSynthesis) {
+  try { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices(); } catch {}
+}
+// Stop any narration if the app is closed/backgrounded.
+window.addEventListener("pagehide", () => { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch {} });
 
 // Resolve the signed-in user's role, then route to the app or the access gate.
 async function enterApp() {
