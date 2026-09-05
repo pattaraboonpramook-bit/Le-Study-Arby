@@ -10,8 +10,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-const SUPABASE_URL = "YOUR_SUPABASE_URL";          // e.g. https://abcxyz.supabase.co
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY"; // the long "anon public" key
+const SUPABASE_URL = "https://sagdkgpoxkdwhxrzyxsh.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_H2V0fITxvBeSl6jgu_3KlQ_amYKOgKw"; // publishable (anon) key — safe to ship
 
 export const isConfigured =
   !SUPABASE_URL.includes("YOUR_") && !SUPABASE_ANON_KEY.includes("YOUR_");
