@@ -354,6 +354,8 @@ function wireTopbar() {
        <div class="divider"></div>
        <button id="menu-key">🔑 ${hasGeminiKey() ? "Change" : "Add"} Gemini key</button>` +
       (state.role === "admin" ? `<button id="menu-admin">🛡 Admin panel</button>` : "") +
+      `<button id="menu-export">⬇ Back up my notes</button>
+       <button id="menu-import">⬆ Restore from backup</button>` +
       (installEvent ? `<button id="menu-install">⬇ Install app</button>` : "") +
       (backend === "local"
         ? `<button id="menu-clear" class="btn-danger">🗑 Clear local data</button>`
@@ -365,6 +367,8 @@ function wireTopbar() {
       if (k !== null) { setGeminiKey(k); toast(k.trim().length > 20 ? "Key saved ✓" : "Key cleared", "success"); }
     };
     if (state.role === "admin") { const a = $("#menu-admin"); if (a) a.onclick = () => { menu.remove(); goAdmin(); }; }
+    $("#menu-export").onclick = () => { menu.remove(); exportData(); };
+    $("#menu-import").onclick = () => { menu.remove(); pickImportFile(); };
     if (installEvent) $("#menu-install").onclick = async () => { menu.remove(); installEvent.prompt(); installEvent = null; };
     if (backend === "local") {
       $("#menu-clear").onclick = () => {
@@ -1155,6 +1159,67 @@ function genCTA(icon, title, sub, btnId, btnLabel) {
   return `<div class="panel gen-cta"><div class="big">${icon}</div>
     <h3 style="font-family:var(--font-display);font-weight:600;font-size:1.25rem">${title}</h3>
     <p>${sub}</p><button class="btn btn-primary" id="${btnId}">${btnLabel}</button></div>`;
+}
+
+// ── Backup / restore (export & import the individual's data) ─────────────────
+function downloadJSON(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function exportData() {
+  busy(true, "Preparing your backup…");
+  try {
+    const list = await listNotes();
+    const notes = [];
+    for (const meta of list) {
+      const full = await getNote(meta.id);
+      let chat = [];
+      try { chat = await listChat(meta.id); } catch {}
+      notes.push({
+        title: full.title, source_type: full.source_type, source_ref: full.source_ref,
+        transcript: full.transcript, notes_md: full.notes_md,
+        flashcards: full.flashcards, quiz: full.quiz, chat,
+      });
+    }
+    downloadJSON({ app: "recall", version: 1, exportedAt: new Date().toISOString(), notes },
+      `recall-backup-${new Date().toISOString().slice(0, 10)}.json`);
+    toast(`Backed up ${notes.length} note${notes.length === 1 ? "" : "s"} ✓`, "success");
+  } catch (err) { toast(err.message, "error"); } finally { busy(false); }
+}
+
+function pickImportFile() {
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "application/json,.json";
+  inp.onchange = () => { if (inp.files && inp.files[0]) importData(inp.files[0]); };
+  inp.click();
+}
+
+async function importData(file) {
+  let backup;
+  try { backup = JSON.parse(await file.text()); }
+  catch { toast("That file isn't valid JSON.", "error"); return; }
+  if (!backup || !Array.isArray(backup.notes)) { toast("That's not a Recall backup file.", "error"); return; }
+  if (!confirm(`Restore ${backup.notes.length} note${backup.notes.length === 1 ? "" : "s"}? They'll be added to your current notes.`)) return;
+  busy(true, "Restoring your notes…");
+  try {
+    for (const n of backup.notes) {
+      const created = await createNote({
+        title: n.title || "Untitled note", source_type: n.source_type || "paste",
+        source_ref: n.source_ref || null, transcript: n.transcript || "",
+        notes_md: n.notes_md || "", flashcards: n.flashcards || [], quiz: n.quiz || [],
+      });
+      if (Array.isArray(n.chat)) {
+        for (const m of n.chat) { if (m && m.role && m.content) { try { await addChat(created.id, m.role, m.content); } catch {} } }
+      }
+    }
+    toast("Backup restored ✓", "success");
+    await goLibrary();
+  } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
 
 // ── Navigation ───────────────────────────────────────────────────────────────

@@ -42,6 +42,8 @@ Open the URL and go. On the deployed HTTPS URL, recording and "Install app" work
 
 - **Local by default** — notes save in your browser, zero setup, no accounts. (No access control — anyone who opens the page can use it with their own key.)
 - **Cloud + access control** — configure Supabase (below) to get real accounts, an admin approval list, and cross-device sync.
+- **Your data survives app updates** — redeploying only replaces the code, never the saved data (browser storage in local mode; the Supabase database in cloud mode).
+- **Backup / restore** — the account menu (top-right ✺) has **Back up my notes** (downloads a JSON file) and **Restore from backup**, so an individual's notes are never truly lost, even if they clear their browser or move to a new device.
 
 ---
 
