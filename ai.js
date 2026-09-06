@@ -62,8 +62,19 @@ Return ONLY a JSON object (no prose, no code fences):
 {"score": <integer 0-100, overall understanding>, "nailed": [<up to 5 short strings: things they explained correctly>], "gaps": [<up to 5 short strings: important points they missed or were too vague on>], "misconceptions": [<up to 3 short strings: things they stated incorrectly; empty array if none>], "tip": "<one specific, encouraging sentence on what to review or do next>"}
 Be fair: reward correct understanding even when worded differently or informally, and don't penalize missing minor trivia. Judge only against the reference notes.`;
 
+const ADVANCED_SYSTEM = `You produce an ADVANCED study breakdown of the student's material, in two complementary parts.
+Return ONLY a JSON object shaped exactly:
+{
+  "mainPoints": [ {"point": "a concise headline naming one of the MOST significant points — a pivotal event, decision, cause, turning point, or strategy that mattered or worked greatly", "simple": "explain that point in plain, beginner-friendly language in 1-2 sentences"} ],
+  "deepDive": "a meticulous, precise analysis in GitHub-flavoured Markdown"
+}
+Rules for "mainPoints": select the 4-8 single most significant points in the material and order them logically; the "point" is a short, punchy headline, and "simple" explains it as if to someone new to the subject. This is the distilled, simple layer.
+Rules for "deepDive": be rigorous, exact, and intellectually ambitious — deploy sophisticated but precise terminology (briefly defining specialised terms), illuminate underlying mechanisms, tensions, and consequences, and articulate *why* each element matters. Go deeper than the surface notes, yet never fabricate facts beyond the provided material. Use "## " headings and tight paragraphs.
+Output only the JSON object.`;
+
 const TASKS = {
   notes:      { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
+  advanced:   { system: ADVANCED_SYSTEM,   max_tokens: 6000, json: true },
   lesson:     { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
   video:      { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
   flashcards: { system: FLASHCARDS_SYSTEM, max_tokens: 4000, json: true },

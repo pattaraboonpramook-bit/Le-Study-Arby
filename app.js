@@ -35,6 +35,7 @@ const state = {
   feynman: null,            // teach-back result
   feynmanText: "",          // teach-back explanation draft
   podcastScript: null,      // [{speaker,text}] audio-overview script
+  advanced: null,           // {deepDive, mainPoints[]}
   authMode: "signin",
 };
 
@@ -674,6 +675,7 @@ function openNoteObject(note) {
   state.feynman = null;
   state.feynmanText = "";
   state.podcastScript = getPodcastLS(note.id);
+  state.advanced = getAdvancedLS(note.id);
   ttsState = { playing: false, paused: false, rate: 1, curTurn: 0 };
   render();
 }
@@ -681,7 +683,7 @@ function openNoteObject(note) {
 function noteHTML() {
   const n = state.current;
   const tabs = [
-    ["notes", "Notes"], ["flashcards", "Flashcards"], ["quiz", "Quiz"], ["teach", "Teach-back"], ["podcast", "Podcast"], ["chat", "Chat"],
+    ["notes", "Notes"], ["advanced", "Advanced"], ["flashcards", "Flashcards"], ["quiz", "Quiz"], ["teach", "Teach-back"], ["podcast", "Podcast"], ["chat", "Chat"],
   ].map(([k, label]) => `<button data-tab="${k}" class="${state.noteTab === k ? "active" : ""}">${label}</button>`).join("");
 
   return `<div>
@@ -720,6 +722,7 @@ function renderNotePanel() {
   if (!p) return;
   const tab = state.noteTab;
   if (tab === "notes") p.innerHTML = notesTabHTML();
+  else if (tab === "advanced") { p.innerHTML = advancedTabHTML(); wireAdvanced(); }
   else if (tab === "flashcards") { p.innerHTML = flashTabHTML(); wireFlash(); }
   else if (tab === "quiz") { p.innerHTML = quizTabHTML(); wireQuiz(); }
   else if (tab === "teach") { p.innerHTML = teachTabHTML(); wireTeach(); }
@@ -751,6 +754,56 @@ async function generateNotes() {
   try {
     const result = await aiGenerate("notes", { source });
     await patchNote({ notes_md: result, title: titleFromMarkdown(result, n.title) });
+    renderNotePanel();
+  } catch (err) { toast(err.message, "error"); } finally { busy(false); }
+}
+
+// Advanced tab (Main Points + sophisticated Deep Dive)
+const getAdvancedLS = (id) => { try { const s = localStorage.getItem("recall_advanced_" + id); return s ? JSON.parse(s) : null; } catch { return null; } };
+const setAdvancedLS = (id, adv) => { try { localStorage.setItem("recall_advanced_" + id, JSON.stringify(adv)); } catch {} };
+
+function advancedTabHTML() {
+  const n = state.current;
+  const material = (n.notes_md || n.transcript || "").trim();
+  if (!material) return genCTA("🧠", "Nothing to analyze yet", "Generate notes first, then unlock the advanced breakdown.", "gen-notes-adv", "Go to Notes");
+  const adv = state.advanced;
+  if (!adv) return genCTA("🧠", "Advanced breakdown", "Distil this into its most significant points — explained simply — plus a meticulous, sophisticated deep-dive.", "gen-advanced", "Generate advanced");
+
+  const mp = (adv.mainPoints || []).map((m, i) =>
+    `<div class="mp-item"><div class="mp-num">${i + 1}</div><div><div class="mp-point">${escapeHtml(m.point || "")}</div><div class="mp-simple">${escapeHtml(m.simple || "")}</div></div></div>`).join("");
+  return `<div class="panel advanced">
+    <div class="adv-section">
+      <h2 class="adv-h">✦ Main Points</h2>
+      <p class="adv-sub">The most significant points, explained simply.</p>
+      <div class="mp-list">${mp || `<p style="color:var(--muted)">No key points were extracted.</p>`}</div>
+    </div>
+    <div class="adv-section">
+      <h2 class="adv-h">✦ Deep Dive</h2>
+      <p class="adv-sub">A meticulous, precise analysis.</p>
+      <div class="prose">${mdToHtml(adv.deepDive || "")}</div>
+    </div>
+    <div style="text-align:center"><button class="btn btn-outline btn-sm" id="regen-advanced">↻ Regenerate</button></div>
+  </div>`;
+}
+
+function wireAdvanced() {
+  const gn = $("#gen-notes-adv"); if (gn) { gn.onclick = () => { state.noteTab = "notes"; renderNotePanel(); syncTabActive(); }; return; }
+  const g = $("#gen-advanced"); if (g) { g.onclick = generateAdvanced; return; }
+  const rg = $("#regen-advanced"); if (rg) rg.onclick = generateAdvanced;
+}
+
+async function generateAdvanced() {
+  const n = state.current;
+  busy(true, "Assembling the advanced breakdown…");
+  try {
+    const res = await aiGenerate("advanced", { source: n.notes_md || n.transcript });
+    const adv = {
+      deepDive: String(res && res.deepDive || ""),
+      mainPoints: (res && Array.isArray(res.mainPoints) ? res.mainPoints : []).filter((m) => m && m.point),
+    };
+    if (!adv.deepDive && !adv.mainPoints.length) throw new Error("Couldn't generate the breakdown — try again.");
+    state.advanced = adv;
+    setAdvancedLS(n.id, adv);
     renderNotePanel();
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }

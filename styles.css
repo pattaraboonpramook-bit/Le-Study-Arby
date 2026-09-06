@@ -309,6 +309,19 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
   padding: 26px; box-shadow: var(--shadow); }
 .quiz-score .num { font-family: var(--font-display); font-size: 2.6rem; font-weight: 700; color: var(--accent); }
 
+/* Advanced (Main Points + Deep Dive) */
+.advanced { max-width: 760px; margin: 0 auto; }
+.adv-section { margin-bottom: 30px; }
+.adv-h { font-family: var(--font-display); font-weight: 600; font-size: 1.3rem; letter-spacing: -0.01em; }
+.adv-sub { color: var(--muted); font-size: .84rem; margin: 2px 0 14px; }
+.mp-list { display: flex; flex-direction: column; gap: 10px; }
+.mp-item { display: flex; gap: 14px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+.mp-num { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+  color: var(--accent-ink); display: grid; place-content: center; font-weight: 700; font-size: .85rem; }
+.mp-point { font-weight: 700; margin-bottom: 3px; }
+.mp-simple { color: var(--text-2); font-size: .93rem; line-height: 1.55; }
+
 /* Podcast */
 .podcast { max-width: 680px; margin: 0 auto; }
 .pod-player { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border);
