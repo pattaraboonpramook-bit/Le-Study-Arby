@@ -356,6 +356,7 @@ function wireTopbar() {
       (state.role === "admin" ? `<button id="menu-admin">🛡 Admin panel</button>` : "") +
       `<button id="menu-export">⬇ Back up my notes</button>
        <button id="menu-import">⬆ Restore from backup</button>` +
+      (backend === "cloud" ? `<button id="menu-migrate">⤴ Import notes from this device</button>` : "") +
       (installEvent ? `<button id="menu-install">⬇ Install app</button>` : "") +
       (backend === "local"
         ? `<button id="menu-clear" class="btn-danger">🗑 Clear local data</button>`
@@ -369,6 +370,7 @@ function wireTopbar() {
     if (state.role === "admin") { const a = $("#menu-admin"); if (a) a.onclick = () => { menu.remove(); goAdmin(); }; }
     $("#menu-export").onclick = () => { menu.remove(); exportData(); };
     $("#menu-import").onclick = () => { menu.remove(); pickImportFile(); };
+    if (backend === "cloud") { const m = $("#menu-migrate"); if (m) m.onclick = () => { menu.remove(); migrateFromDevice(); }; }
     if (installEvent) $("#menu-install").onclick = async () => { menu.remove(); installEvent.prompt(); installEvent = null; };
     if (backend === "local") {
       $("#menu-clear").onclick = () => {
@@ -1218,6 +1220,31 @@ async function importData(file) {
       }
     }
     toast("Backup restored ✓", "success");
+    await goLibrary();
+  } catch (err) { toast(err.message, "error"); } finally { busy(false); }
+}
+
+// Import notes saved in this browser's local mode into the cloud account.
+async function migrateFromDevice() {
+  let localNotes = [];
+  try { localNotes = JSON.parse(localStorage.getItem("recall_notes") || "[]"); } catch {}
+  if (!localNotes.length) { toast("No notes are saved on this device to import.", "error"); return; }
+  if (!confirm(`Import ${localNotes.length} note${localNotes.length === 1 ? "" : "s"} saved on this device into your account?`)) return;
+  busy(true, "Importing your notes…");
+  try {
+    let done = 0;
+    for (const ln of localNotes) {
+      const created = await createNote({
+        title: ln.title || "Untitled note", source_type: ln.source_type || "paste",
+        source_ref: ln.source_ref || null, transcript: ln.transcript || "",
+        notes_md: ln.notes_md || "", flashcards: ln.flashcards || [], quiz: ln.quiz || [],
+      });
+      let chat = [];
+      try { chat = JSON.parse(localStorage.getItem("recall_chat_" + ln.id) || "[]"); } catch {}
+      for (const m of chat) { if (m && m.role && m.content) { try { await addChat(created.id, m.role, m.content); } catch {} } }
+      done++;
+    }
+    toast(`Imported ${done} note${done === 1 ? "" : "s"} into your account ✓`, "success");
     await goLibrary();
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
