@@ -683,7 +683,7 @@ function openNoteObject(note) {
 function noteHTML() {
   const n = state.current;
   const tabs = [
-    ["notes", "Notes"], ["advanced", "Advanced"], ["flashcards", "Flashcards"], ["quiz", "Quiz"], ["teach", "Teach-back"], ["podcast", "Podcast"], ["chat", "Chat"],
+    ["notes", "Notes"], ["advanced", "Advanced"], ["mainpoints", "Main Points"], ["flashcards", "Flashcards"], ["quiz", "Quiz"], ["teach", "Teach-back"], ["podcast", "Podcast"], ["chat", "Chat"],
   ].map(([k, label]) => `<button data-tab="${k}" class="${state.noteTab === k ? "active" : ""}">${label}</button>`).join("");
 
   return `<div>
@@ -723,6 +723,7 @@ function renderNotePanel() {
   const tab = state.noteTab;
   if (tab === "notes") p.innerHTML = notesTabHTML();
   else if (tab === "advanced") { p.innerHTML = advancedTabHTML(); wireAdvanced(); }
+  else if (tab === "mainpoints") { p.innerHTML = mainPointsTabHTML(); wireAdvanced(); }
   else if (tab === "flashcards") { p.innerHTML = flashTabHTML(); wireFlash(); }
   else if (tab === "quiz") { p.innerHTML = quizTabHTML(); wireQuiz(); }
   else if (tab === "teach") { p.innerHTML = teachTabHTML(); wireTeach(); }
@@ -762,25 +763,37 @@ async function generateNotes() {
 const getAdvancedLS = (id) => { try { const s = localStorage.getItem("recall_advanced_" + id); return s ? JSON.parse(s) : null; } catch { return null; } };
 const setAdvancedLS = (id, adv) => { try { localStorage.setItem("recall_advanced_" + id, JSON.stringify(adv)); } catch {} };
 
+// Advanced tab — the meticulous, sophisticated elaboration (deep dive).
 function advancedTabHTML() {
   const n = state.current;
   const material = (n.notes_md || n.transcript || "").trim();
-  if (!material) return genCTA("🧠", "Nothing to analyze yet", "Generate notes first, then unlock the advanced breakdown.", "gen-notes-adv", "Go to Notes");
+  if (!material) return genCTA("🧠", "Nothing to analyze yet", "Generate notes first, then unlock the advanced elaboration.", "gen-notes-adv", "Go to Notes");
   const adv = state.advanced;
-  if (!adv) return genCTA("🧠", "Advanced breakdown", "Distil this into its most significant points — explained simply — plus a meticulous, sophisticated deep-dive.", "gen-advanced", "Generate advanced");
+  if (!adv || !adv.deepDive) return genCTA("🧠", "Advanced", "A meticulous, precise, sophisticated elaboration of this material.", "gen-advanced", "Generate");
+  return `<div class="panel advanced">
+    <div class="adv-section">
+      <h2 class="adv-h">✦ Advanced</h2>
+      <p class="adv-sub">A meticulous, precise elaboration.</p>
+      <div class="prose">${mdToHtml(adv.deepDive)}</div>
+    </div>
+    <div style="text-align:center"><button class="btn btn-outline btn-sm" id="regen-advanced">↻ Regenerate</button></div>
+  </div>`;
+}
 
-  const mp = (adv.mainPoints || []).map((m, i) =>
+// Main Points tab — the simple, easy layer (significant events, actions, plans).
+function mainPointsTabHTML() {
+  const n = state.current;
+  const material = (n.notes_md || n.transcript || "").trim();
+  if (!material) return genCTA("📌", "Nothing to break down yet", "Generate notes first, then get the main points.", "gen-notes-adv", "Go to Notes");
+  const adv = state.advanced;
+  if (!adv || !(adv.mainPoints || []).length) return genCTA("📌", "Main Points", "The most important events, actions, and plans — explained simply.", "gen-advanced", "Generate");
+  const mp = adv.mainPoints.map((m, i) =>
     `<div class="mp-item"><div class="mp-num">${i + 1}</div><div><div class="mp-point">${escapeHtml(m.point || "")}</div><div class="mp-simple">${escapeHtml(m.simple || "")}</div></div></div>`).join("");
   return `<div class="panel advanced">
     <div class="adv-section">
       <h2 class="adv-h">✦ Main Points</h2>
-      <p class="adv-sub">The most significant points, explained simply.</p>
-      <div class="mp-list">${mp || `<p style="color:var(--muted)">No key points were extracted.</p>`}</div>
-    </div>
-    <div class="adv-section">
-      <h2 class="adv-h">✦ Deep Dive</h2>
-      <p class="adv-sub">A meticulous, precise analysis.</p>
-      <div class="prose">${mdToHtml(adv.deepDive || "")}</div>
+      <p class="adv-sub">The most important events, actions &amp; plans — kept simple.</p>
+      <div class="mp-list">${mp}</div>
     </div>
     <div style="text-align:center"><button class="btn btn-outline btn-sm" id="regen-advanced">↻ Regenerate</button></div>
   </div>`;

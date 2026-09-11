@@ -68,8 +68,8 @@ Return ONLY a JSON object shaped exactly:
   "mainPoints": [ {"point": "a concise headline naming one of the MOST significant points — a pivotal event, decision, cause, turning point, or strategy that mattered or worked greatly", "simple": "explain that point in plain, beginner-friendly language in 1-2 sentences"} ],
   "deepDive": "a meticulous, precise analysis in GitHub-flavoured Markdown"
 }
-Rules for "mainPoints": select the 4-8 single most significant points in the material and order them logically; the "point" is a short, punchy headline, and "simple" explains it as if to someone new to the subject. This is the distilled, simple layer.
-Rules for "deepDive": be rigorous, exact, and intellectually ambitious — deploy sophisticated but precise terminology (briefly defining specialised terms), illuminate underlying mechanisms, tensions, and consequences, and articulate *why* each element matters. Go deeper than the surface notes, yet never fabricate facts beyond the provided material. Use "## " headings and tight paragraphs.
+Rules for "mainPoints" (the SIMPLE layer): select the 4-8 most important or significant items — key events, actions, decisions, or plans — and order them logically; the "point" is a short, punchy headline, and "simple" explains it plainly and comprehensibly, as if to someone brand new to the subject. Keep this layer genuinely easy to understand.
+Rules for "deepDive" (the ADVANCED layer): elaborate with meticulous, precise detail and sophisticated but exact terminology (briefly defining specialised terms); illuminate underlying mechanisms, tensions, and consequences, and articulate *why* each element matters. Be thorough yet economical — dense and exact, no filler. Go deeper than the surface notes, yet never fabricate facts beyond the provided material. Use "## " headings and tight paragraphs.
 Output only the JSON object.`;
 
 const TASKS = {
