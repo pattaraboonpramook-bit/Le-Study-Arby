@@ -2,7 +2,7 @@
 // App-shell caching so the app launches offline. Never caches /api/* (those
 // always need the network) or Supabase requests. Static assets: stale-while-
 // revalidate. Navigations: network-first, falling back to the cached shell.
-const VERSION = "recall-v13";
+const VERSION = "recall-v14";
 const CORE = [
   "./",
   "index.html",
@@ -47,21 +47,19 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Same-origin static assets: stale-while-revalidate.
+  // Same-origin app files: network-first (always get the latest when online),
+  // fall back to cache only when offline. Prevents users getting stuck on an old build.
   if (url.origin === self.location.origin) {
     e.respondWith(
-      caches.match(request).then((cached) => {
-        const network = fetch(request)
-          .then((resp) => {
-            if (resp && resp.status === 200) {
-              const copy = resp.clone();
-              caches.open(VERSION).then((c) => c.put(request, copy));
-            }
-            return resp;
-          })
-          .catch(() => cached);
-        return cached || network;
-      })
+      fetch(request)
+        .then((resp) => {
+          if (resp && resp.status === 200) {
+            const copy = resp.clone();
+            caches.open(VERSION).then((c) => c.put(request, copy));
+          }
+          return resp;
+        })
+        .catch(() => caches.match(request))
     );
     return;
   }

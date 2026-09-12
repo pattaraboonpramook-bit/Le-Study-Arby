@@ -1340,6 +1340,13 @@ async function goLibrary() {
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvent = e; });
 
 if ("serviceWorker" in navigator) {
+  // When a new version takes over, reload once so the user always gets the latest.
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 
