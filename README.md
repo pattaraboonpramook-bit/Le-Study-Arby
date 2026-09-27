@@ -37,6 +37,7 @@ Open the URL and go. On the deployed HTTPS URL, recording and "Install app" work
 - 🧑‍🏫 **Teach-back (Feynman mode)** — explain a topic in your own words (type or **speak** it) and get graded on your *actual understanding*: a mastery score, what you nailed, your gaps, and misconceptions. Most study apps generate content *for* you — this makes you recall it, which is what makes it stick.
 - 🎙️ **Podcast mode** — turns a note into a fun two-host "audio overview" and reads it aloud (browser text-to-speech, two voices, current line highlighted) so you can study hands-free. Free — no audio API.
 - 🧠 **Advanced** & 📌 **Main Points** — two tabs from one analysis: **Advanced** is a meticulous, sophisticated elaboration of the material; **Main Points** distils the significant events, actions, and plans into simple, easy takeaways.
+- 🎮 **Progression** — earn **XP** and **level up** for studying, keep a daily **streak**, and unlock **achievements** (Perfect Score, The Explainer, Polymath…). Tap the level chip (top-right) to see your stats and badges. Confetti included.
 - 📱 Installable PWA, light/dark themes.
 
 ## Storage

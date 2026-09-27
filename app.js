@@ -8,8 +8,18 @@ import {
   listChat, addChat,
 } from "./store.js";
 import { generate, hasGeminiKey, getGeminiKey, setGeminiKey } from "./ai.js";
+import { levelInfo, addXP, ACHIEVEMENTS, getEarned, earnedCount, unlock } from "./gamify.js";
 
 const app = document.getElementById("app");
+
+// Ambient animated gradient orbs behind the app (energy, tasteful, motion-safe).
+if (!document.querySelector(".bg-orbs")) {
+  const orbs = document.createElement("div");
+  orbs.className = "bg-orbs";
+  orbs.setAttribute("aria-hidden", "true");
+  orbs.innerHTML = "<span></span><span></span>";
+  document.body.appendChild(orbs);
+}
 
 // ── State ────────────────────────────────────────────────────────────────────
 const state = {
@@ -20,6 +30,7 @@ const state = {
   adminUsers: null,         // loaded for the admin panel
   search: "",
   streak: 1,
+  streakGained: false,
   current: null,            // full note object
   noteTab: "notes",         // notes | flashcards | quiz | chat
   captureMode: "record",    // record | paste | youtube
@@ -134,20 +145,80 @@ function confetti() {
   })(t0);
 }
 
-// Study streak: counts consecutive days you open Recall.
+// Study streak: counts consecutive days you open Recall. Returns { streak, gained }.
 function updateStreak() {
   try {
     const today = new Date().toDateString();
     const last = localStorage.getItem("recall_streak_date");
     let streak = +(localStorage.getItem("recall_streak") || 0);
+    let gained = false;
     if (last !== today) {
       const yesterday = new Date(Date.now() - 86400000).toDateString();
       streak = last === yesterday ? streak + 1 : 1;
       localStorage.setItem("recall_streak", String(streak));
       localStorage.setItem("recall_streak_date", today);
+      gained = true;
     }
-    return streak || 1;
-  } catch { return 1; }
+    return { streak: streak || 1, gained };
+  } catch { return { streak: 1, gained: false }; }
+}
+
+// ── Gamification (XP / levels / achievements) ────────────────────────────────
+function award(amount, achievements = []) {
+  const res = addXP(amount);
+  if (res.leveledUp) {
+    confetti();
+    toast(`⭐ Level up! You hit Level ${res.to}`, "success");
+    if (res.to >= 5) celebrate("level-5");
+  }
+  for (const id of achievements) celebrate(id);
+  updateXpChip();
+}
+function celebrate(id) {
+  const a = unlock(id);
+  if (a) { confetti(); toast(`🏅 Achievement unlocked — ${a.name}!`, "success"); updateXpChip(); }
+}
+function updateXpChip() {
+  const chip = $("#xp-chip"); if (!chip) return;
+  const info = levelInfo();
+  const lvl = chip.querySelector(".xp-lvl"); if (lvl) lvl.textContent = "Lv " + info.level;
+  const ring = chip.querySelector(".xp-ring"); if (ring) ring.style.setProperty("--pct", info.pct);
+}
+// Track which study tools were used on a note; all five unlocks "Polymath".
+const POLY_TOOLS = ["advanced", "flashcards", "quiz", "teach", "podcast"];
+function markTool(tool) {
+  const id = state.current && state.current.id; if (!id) return;
+  const key = "recall_tools_" + id;
+  let set = {}; try { set = JSON.parse(localStorage.getItem(key) || "{}"); } catch {}
+  set[tool] = 1; try { localStorage.setItem(key, JSON.stringify(set)); } catch {}
+  if (POLY_TOOLS.every((t) => set[t])) celebrate("polymath");
+}
+function openStats() {
+  const info = levelInfo();
+  const earned = getEarned();
+  const notes = state.notes ? state.notes.length : "—";
+  const grid = ACHIEVEMENTS.map((a) => {
+    const got = !!earned[a.id];
+    return `<div class="ach ${got ? "got" : "locked"}"><div class="ach-ic">${got ? a.icon : "🔒"}</div><div><div class="ach-name">${a.name}</div><div class="ach-desc">${a.desc}</div></div></div>`;
+  }).join("");
+  const o = document.createElement("div");
+  o.className = "stats-overlay"; o.id = "stats-overlay";
+  o.innerHTML = `<div class="stats-card">
+    <button class="stats-close" id="stats-close" aria-label="Close">✕</button>
+    <div class="stats-hero">
+      <div class="big-ring" style="--pct:${info.pct}"><div class="big-ring-in"><span class="big-lvl">${info.level}</span><small>LEVEL</small></div></div>
+      <div class="stats-meta">
+        <div class="stats-name">Level ${info.level}</div>
+        <div class="stats-xp">${info.into} / ${info.need} XP to Level ${info.level + 1}</div>
+        <div class="stats-chips"><span class="spill">🔥 ${state.streak}-day streak</span><span class="spill">📚 ${notes} notes</span><span class="spill">🏅 ${earnedCount()}/${ACHIEVEMENTS.length}</span></div>
+      </div>
+    </div>
+    <h3 class="stats-h">Achievements</h3>
+    <div class="ach-grid">${grid}</div>
+  </div>`;
+  document.body.appendChild(o);
+  o.addEventListener("click", (e) => { if (e.target === o) o.remove(); });
+  $("#stats-close").onclick = () => o.remove();
 }
 
 // Ask for the Gemini key (saved in this browser only). Returns true if we have one.
@@ -285,7 +356,7 @@ function authHTML() {
   return `<div class="auth"><div class="auth-card">
     <div class="auth-logo"><div class="mark">✺</div></div>
     <h1>${signup ? "Create your account" : "Welcome back"}</h1>
-    <p class="sub">Turn any lecture into notes, flashcards & quizzes.</p>
+    <p class="sub">Lectures in — notes, flashcards & quizzes out. Let's make it stick.</p>
     <form id="auth-form">
       <input class="input" type="email" id="email" placeholder="you@school.edu" autocomplete="email" required />
       <input class="input" type="password" id="password" placeholder="Password (min 6 chars)" autocomplete="${signup ? "new-password" : "current-password"}" minlength="6" required />
@@ -329,9 +400,14 @@ function wireAuth() {
 function topbarHTML() {
   const initial = (state.user?.email || "U")[0].toUpperCase();
   const themeIcon = currentTheme() === "dark" ? "☀" : "☾";
+  const info = levelInfo();
   return `<header class="topbar">
     <div class="brand" id="brand"><span class="mark">✺</span><span class="name">Recall</span></div>
     <div class="topbar-actions">
+      <button class="xp-chip" id="xp-chip" title="Your progress, streak & achievements">
+        <span class="xp-ring" style="--pct:${info.pct}"><span class="xp-lvl">Lv ${info.level}</span></span>
+        <span class="xp-streak">🔥 ${state.streak}</span>
+      </button>
       <button class="btn btn-icon btn-ghost" id="theme-btn" title="Toggle theme" aria-label="Toggle theme">${themeIcon}</button>
       <div class="menu-wrap">
         <button class="avatar" id="avatar-btn" aria-label="Account">${escapeHtml(initial)}</button>
@@ -343,6 +419,7 @@ function topbarHTML() {
 function wireTopbar() {
   $("#brand").onclick = goLibrary;
   $("#theme-btn").onclick = toggleTheme;
+  const xp = $("#xp-chip"); if (xp) xp.onclick = openStats;
   const avatar = $("#avatar-btn");
   avatar.onclick = (e) => {
     e.stopPropagation();
@@ -410,9 +487,9 @@ function libraryHTML() {
 
   if (state.notes.length === 0) {
     return head + `<div class="empty">
-      <div class="big">✎</div><h3>No notes yet</h3>
-      <p>Record a lecture, paste your material, or drop a YouTube link to get started.</p>
-      <button class="btn btn-primary" id="new-note-2" style="margin-top:16px">Create your first note</button>
+      <div class="big">✨</div><h3>A blank slate — let's change that</h3>
+      <p>Record a lecture, paste your notes, or drop a YouTube link. I'll turn it into something you can actually study — and you'll rack up XP doing it.</p>
+      <button class="btn btn-primary" id="new-note-2" style="margin-top:16px">Make your first note</button>
     </div>`;
   }
   if (filtered.length === 0) return head + `<div class="empty"><p>No notes match “${escapeHtml(state.search)}”.</p></div>`;
@@ -645,6 +722,7 @@ async function runTurbo() {
     openNoteObject(note);
     toast(praise(), "success");
     confetti();
+    award(12);
   } catch (err) {
     toast(err.message, "error");
   } finally {
@@ -756,6 +834,7 @@ async function generateNotes() {
     const result = await aiGenerate("notes", { source });
     await patchNote({ notes_md: result, title: titleFromMarkdown(result, n.title) });
     renderNotePanel();
+    award(8);
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
 
@@ -818,6 +897,7 @@ async function generateAdvanced() {
     state.advanced = adv;
     setAdvancedLS(n.id, adv);
     renderNotePanel();
+    award(6, ["advanced"]); markTool("advanced");
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
 
@@ -868,6 +948,7 @@ async function generateFlashcards() {
     await patchNote({ flashcards: cards });
     state.fc = { order: cards.map((_, i) => i), i: 0, flipped: false };
     renderNotePanel();
+    award(6); markTool("flashcards");
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
 
@@ -919,6 +1000,8 @@ function wireQuiz() {
     if (done) {
       const score = quiz.reduce((s, q, i) => s + (state.quiz.answers[i] === q.answer ? 1 : 0), 0);
       if (quiz.length && score / quiz.length >= 0.7) confetti();
+      award(4 + score * 2);
+      if (quiz.length && score === quiz.length) celebrate("quiz-ace");
     }
   }));
   const rt = $("#quiz-retake"); if (rt) rt.onclick = () => { state.quiz = { answers: {} }; renderNotePanel(); };
@@ -935,6 +1018,7 @@ async function generateQuiz() {
     await patchNote({ quiz });
     state.quiz = { answers: {} };
     renderNotePanel();
+    award(6); markTool("quiz");
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
 
@@ -998,7 +1082,10 @@ async function gradeFeynman() {
     const r = await aiGenerate("feynman", { context: state.current.notes_md || state.current.transcript, explanation });
     state.feynman = r;
     renderNotePanel();
-    if ((Number(r.score) || 0) >= 80) confetti();
+    const sc = Number(r.score) || 0;
+    if (sc >= 80) confetti();
+    award(4 + Math.round(sc / 10)); markTool("teach");
+    if (sc >= 90) celebrate("teach-master");
     $("#feynman-result")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
@@ -1084,6 +1171,7 @@ async function generatePodcast() {
     state.podcastScript = script;
     setPodcastLS(n.id, script);
     renderNotePanel();
+    award(6, ["podcast"]); markTool("podcast");
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
 
@@ -1330,8 +1418,19 @@ async function goLibrary() {
   state.view = "library";
   state.notes = null;
   render();
-  try { state.notes = await listNotes(); renderView(); }
-  catch (err) { toast(err.message, "error"); state.notes = []; renderView(); }
+  try {
+    state.notes = await listNotes();
+    renderView();
+    if (state.notes.length >= 1) celebrate("first-note");
+    if (state.notes.length >= 10) celebrate("ten-notes");
+    if (state.streakGained) {
+      state.streakGained = false;
+      award(15);
+      if (state.streak >= 3) celebrate("streak-3");
+      if (state.streak >= 7) celebrate("streak-7");
+      toast(`🔥 ${state.streak}-day streak — +15 XP`, "success");
+    }
+  } catch (err) { toast(err.message, "error"); state.notes = []; renderView(); }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1370,7 +1469,9 @@ async function enterApp() {
 }
 
 async function boot() {
-  state.streak = updateStreak();
+  const s = updateStreak();
+  state.streak = s.streak;
+  state.streakGained = s.gained;
   onAuthChange((user) => {
     const was = state.user;
     state.user = user;
