@@ -94,9 +94,12 @@ function extractJson(text) {
   return JSON.parse(t.slice(start, end + 1));
 }
 
-function endpoint() {
-  return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(getGeminiKey())}`;
+function endpoint(model) {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(getGeminiKey())}`;
 }
+
+// Try the configured model first, then fall back to others if it's overloaded.
+const MODEL_CHAIN = [...new Set([GEMINI_MODEL, "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-flash-latest"])];
 
 // Normalize any YouTube URL to the clean form Gemini accepts. Extra params like
 // &t= (timestamp) or &list= (playlist) make Gemini reject the request, and they
@@ -163,31 +166,53 @@ function buildBody(task, payload, cfg) {
 }
 
 function mapError(status, msg) {
-  if (/API key not valid|API_KEY_INVALID|invalid.*key/i.test(msg)) return "Your Gemini API key is invalid — check ai-config.js.";
-  if (status === 429) return "Hit Gemini's free-tier rate limit — wait a minute and try again.";
+  if (/API key not valid|API_KEY_INVALID|invalid.*key/i.test(msg)) return "Your Gemini API key is invalid — add a valid one.";
+  if (status === 429) return "Gemini's free tier is busy right now — wait a minute and try again.";
   if (status === 403) return "Gemini denied the request — the key may be restricted, or the API isn't enabled for it.";
-  if (status >= 500) return "Gemini had a server error — please retry.";
+  if (status === 503 || /overloaded|unavailable/i.test(msg)) return "Gemini is overloaded right now (free tier). Give it a moment and try again.";
+  if (status >= 500) return "Gemini had a server error — please try again.";
   return msg || `Request failed (${status}).`;
 }
 
-async function callGemini(body) {
-  let res;
-  try {
-    res = await fetch(endpoint(), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    throw new Error("Couldn't reach Google — check your internet connection.");
-  }
-  const data = await res.json().catch(() => null);
-  if (!res.ok) {
-    const e = new Error(mapError(res.status, data?.error?.message || ""));
-    e.status = res.status;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Transient statuses worth retrying / falling back on (overload, rate-limit, gateway, network=0).
+const RETRYABLE = new Set([0, 429, 500, 502, 503, 504]);
+
+// One model, with a single quick retry on a transient error.
+async function tryModel(model, body) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let res;
+    try {
+      res = await fetch(endpoint(model), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      const e = new Error("Couldn't reach Google — check your internet connection."); e.status = 0;
+      if (attempt < 1) { await sleep(600); continue; }
+      throw e;
+    }
+    const data = await res.json().catch(() => null);
+    if (res.ok) return data;
+    const e = new Error(mapError(res.status, data?.error?.message || "")); e.status = res.status;
+    if (RETRYABLE.has(res.status) && attempt < 1) { await sleep(800); continue; }
     throw e;
   }
-  return data;
+}
+
+// Call Gemini, automatically falling back through MODEL_CHAIN when a model is busy.
+async function callGemini(body) {
+  let lastErr;
+  for (const model of MODEL_CHAIN) {
+    try {
+      return await tryModel(model, body);
+    } catch (e) {
+      lastErr = e;
+      if (!RETRYABLE.has(e.status)) throw e; // real error (bad key, 400, safety) — stop
+    }
+  }
+  throw lastErr;
 }
 
 function textFrom(data) {

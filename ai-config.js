@@ -8,6 +8,7 @@
 // Get a free key at: https://aistudio.google.com/apikey  (Create API key)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Current free, fast model. If you ever get a "model not available" error,
-// update this (e.g. to "gemini-flash-latest").
-export const GEMINI_MODEL = "gemini-3.6-flash";
+// Primary model. "flash-lite" has the best free-tier availability (the bigger
+// flash models get "high demand" 503s), and it's a stable alias so it won't get
+// retired. ai.js also falls back to other models automatically if this one is busy.
+export const GEMINI_MODEL = "gemini-flash-lite-latest";
