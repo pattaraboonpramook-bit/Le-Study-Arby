@@ -892,13 +892,48 @@ function notesTabHTML() {
     return genCTA("✎", "No notes yet", "Generate clean study notes from the captured material.", "gen-notes", "Generate notes");
   }
   return `<div class="panel"><div class="prose">${mdToHtml(n.notes_md)}</div>
-    <div style="margin-top:24px;display:flex;gap:10px">
+    <div style="margin-top:24px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="regen-notes">↻ Regenerate</button>
+      <button class="btn btn-outline btn-sm" id="translate-notes">🌐 Translate</button>
     </div></div>`;
 }
 function wireNotesTab() {
   const g = $("#gen-notes"); if (g) g.onclick = () => generateNotes();
   const r = $("#regen-notes"); if (r) r.onclick = () => generateNotes();
+  const t = $("#translate-notes"); if (t) t.onclick = translateNote;
+}
+
+// Pop a language chooser overlay; calls onPick(languageValue) when one is chosen.
+function pickLanguage(onPick) {
+  const o = document.createElement("div");
+  o.className = "stats-overlay";
+  o.innerHTML = `<div class="stats-card" style="max-width:440px">
+    <button class="stats-close" id="lp-close" aria-label="Close">✕</button>
+    <h3 class="stats-h" style="margin-bottom:14px">Translate this note into…</h3>
+    <div class="lang-grid">${LANGS.filter((l) => l.v !== "auto").map((l) => `<button class="lang-opt" data-v="${l.v}">${l.n}</button>`).join("")}</div>
+  </div>`;
+  document.body.appendChild(o);
+  const close = () => o.remove();
+  o.addEventListener("click", (e) => { if (e.target === o) close(); });
+  $("#lp-close").onclick = close;
+  o.querySelectorAll(".lang-opt").forEach((b) => (b.onclick = () => { close(); onPick(b.dataset.v); }));
+}
+
+async function translateNote() {
+  const n = state.current;
+  const src = n.notes_md || n.transcript;
+  if (!src || !src.trim()) { toast("Nothing to translate yet.", "error"); return; }
+  pickLanguage(async (lang) => {
+    const name = (LANGS.find((l) => l.v === lang) || {}).n || lang;
+    busy(true, `Translating into ${name}…`);
+    try {
+      const translated = await aiGenerate("translate", { source: src, lang });
+      await patchNote({ notes_md: translated, title: titleFromMarkdown(translated, n.title) });
+      renderNotePanel();
+      $("#note-title") && ($("#note-title").textContent = state.current.title);
+      toast(`Translated into ${name} ✓`, "success");
+    } catch (err) { toast(err.message, "error"); } finally { busy(false); }
+  });
 }
 async function generateNotes() {
   const n = state.current;

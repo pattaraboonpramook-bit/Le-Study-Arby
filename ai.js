@@ -92,6 +92,7 @@ Output only the JSON object.`;
 const TASKS = {
   notes:      { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
   image:      { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
+  translate:  { system: "",                max_tokens: 8000, json: false },
   advanced:   { system: ADVANCED_SYSTEM,   max_tokens: 6000, json: true },
   lesson:     { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
   video:      { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
@@ -146,6 +147,13 @@ function buildBody(task, payload, cfg) {
       ] }],
       generationConfig,
     };
+  }
+
+  if (task === "translate") {
+    const lang = String(payload?.lang || "English");
+    const source = String(payload?.source || "").slice(0, MAX_SOURCE);
+    const sys = `You are an expert translator. Translate the user's study notes into ${lang}. Preserve ALL Markdown formatting exactly (the same headings, bold, bullet/numbered lists, blockquotes, code blocks). Translate only the human-readable text; leave numbers, formulas, code, and URLs unchanged. Do not add any commentary or notes of your own. Output only the translated Markdown.`;
+    return { system_instruction: { parts: [{ text: sys }] }, contents: [{ role: "user", parts: [{ text: source }] }], generationConfig };
   }
 
   if (task === "image") {
@@ -263,7 +271,7 @@ export async function generate(task, payload) {
   if (!cfg) throw new Error(`Unknown task: ${task}`);
 
   const body = buildBody(task, payload, cfg);
-  applyLanguage(body);
+  if (task !== "translate") applyLanguage(body); // translate carries its own target language
   const data = await callGemini(body);
   const text = textFrom(data);
 

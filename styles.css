@@ -477,3 +477,10 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .ach-name { font-weight: 700; font-size: .9rem; }
 .ach-desc { font-size: .76rem; color: var(--text-2); line-height: 1.4; }
 @media (max-width: 460px) { .ach-grid { grid-template-columns: 1fr; } }
+
+/* Language chooser (translate) */
+.lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lang-opt { padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2);
+  text-align: left; font-weight: 600; font-size: .9rem; transition: border-color .15s, background .15s; }
+.lang-opt:hover { border-color: var(--accent); background: var(--accent-weak); }
+@media (max-width: 460px) { .lang-grid { grid-template-columns: 1fr; } }
