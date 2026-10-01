@@ -7,7 +7,18 @@ import {
   listNotes, getNote, createNote, updateNote, deleteNote,
   listChat, addChat,
 } from "./store.js";
-import { generate, hasGeminiKey, getGeminiKey, setGeminiKey } from "./ai.js";
+import { generate, hasGeminiKey, getGeminiKey, setGeminiKey, getLang, setLang } from "./ai.js";
+
+// Output languages: value is the name used in the AI prompt; label is the native name.
+const LANGS = [
+  { v: "auto", n: "🌐 Auto (match source)" },
+  { v: "English", n: "English" }, { v: "French", n: "Français" }, { v: "Spanish", n: "Español" },
+  { v: "German", n: "Deutsch" }, { v: "Italian", n: "Italiano" }, { v: "Portuguese", n: "Português" },
+  { v: "Dutch", n: "Nederlands" }, { v: "Thai", n: "ไทย" }, { v: "Chinese", n: "中文" },
+  { v: "Japanese", n: "日本語" }, { v: "Korean", n: "한국어" }, { v: "Arabic", n: "العربية" },
+  { v: "Hindi", n: "हिन्दी" }, { v: "Indonesian", n: "Bahasa Indonesia" }, { v: "Vietnamese", n: "Tiếng Việt" },
+  { v: "Russian", n: "Русский" },
+];
 import { levelInfo, addXP, ACHIEVEMENTS, getEarned, earnedCount, unlock } from "./gamify.js";
 
 const app = document.getElementById("app");
@@ -431,7 +442,8 @@ function wireTopbar() {
     menu.innerHTML =
       `<div style="padding:8px 12px;color:var(--muted);font-size:.8rem;word-break:break-all">${escapeHtml(state.user.email)}</div>
        <div class="divider"></div>
-       <button id="menu-key">🔑 ${hasGeminiKey() ? "Change" : "Add"} Gemini key</button>` +
+       <button id="menu-key">🔑 ${hasGeminiKey() ? "Change" : "Add"} Gemini key</button>
+       <div class="menu-lang"><span>🌐 Language</span><select id="menu-lang-select">${LANGS.map((l) => `<option value="${l.v}"${getLang() === l.v ? " selected" : ""}>${l.n}</option>`).join("")}</select></div>` +
       (state.role === "admin" ? `<button id="menu-admin">🛡 Admin panel</button>` : "") +
       `<button id="menu-export">⬇ Back up my notes</button>
        <button id="menu-import">⬆ Restore from backup</button>` +
@@ -446,6 +458,13 @@ function wireTopbar() {
       const k = window.prompt("Paste your Gemini API key (from aistudio.google.com/apikey).\nSaved only in this browser.", getGeminiKey());
       if (k !== null) { setGeminiKey(k); toast(k.trim().length > 20 ? "Key saved ✓" : "Key cleared", "success"); }
     };
+    const langSel = $("#menu-lang-select");
+    if (langSel) langSel.onchange = () => {
+      setLang(langSel.value);
+      const name = (LANGS.find((l) => l.v === langSel.value) || {}).n || langSel.value;
+      toast(langSel.value === "auto" ? "Language: auto — matches your material" : `Output language: ${name} ✓`, "success");
+      menu.remove();
+    };
     if (state.role === "admin") { const a = $("#menu-admin"); if (a) a.onclick = () => { menu.remove(); goAdmin(); }; }
     $("#menu-export").onclick = () => { menu.remove(); exportData(); };
     $("#menu-import").onclick = () => { menu.remove(); pickImportFile(); };
@@ -459,7 +478,8 @@ function wireTopbar() {
     } else {
       $("#menu-signout").onclick = async () => { await signOut(); };
     }
-    setTimeout(() => document.addEventListener("click", function close() {
+    setTimeout(() => document.addEventListener("click", function close(e) {
+      if (menu.contains(e.target)) return; // keep open while using the menu (e.g. the language picker)
       menu.remove(); document.removeEventListener("click", close);
     }), 0);
   };

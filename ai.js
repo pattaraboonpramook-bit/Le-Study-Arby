@@ -17,6 +17,23 @@ export function hasGeminiKey() {
   return getGeminiKey().length > 20;
 }
 
+// ── Output language (stored per-device; "auto" = match the source) ───────────
+const LANG_LS = "recall_lang";
+export function getLang() { try { return localStorage.getItem(LANG_LS) || "auto"; } catch { return "auto"; } }
+export function setLang(v) { try { localStorage.setItem(LANG_LS, v || "auto"); } catch {} }
+
+// Append a language directive to the request's system instruction, when set.
+function applyLanguage(body) {
+  const lang = getLang();
+  if (!lang || lang === "auto") return;
+  const dir = `\n\nLANGUAGE REQUIREMENT: Write your entire response in ${lang}. If the output is JSON, keep the JSON keys and structure exactly as specified (in English) but write every human-readable text value in ${lang}.`;
+  if (body.system_instruction && body.system_instruction.parts && body.system_instruction.parts[0]) {
+    body.system_instruction.parts[0].text += dir;
+  } else {
+    body.system_instruction = { parts: [{ text: dir.trim() }] };
+  }
+}
+
 const NOTES_SYSTEM = `You are an expert study-notes creator for students. Turn the raw material the student gives you — a lecture transcript, pasted text, or messy notes — into clean, faithful, well-structured study notes in GitHub-flavoured Markdown.
 
 Rules:
@@ -245,7 +262,9 @@ export async function generate(task, payload) {
   const cfg = TASKS[task];
   if (!cfg) throw new Error(`Unknown task: ${task}`);
 
-  const data = await callGemini(buildBody(task, payload, cfg));
+  const body = buildBody(task, payload, cfg);
+  applyLanguage(body);
+  const data = await callGemini(body);
   const text = textFrom(data);
 
   if (cfg.json) {
