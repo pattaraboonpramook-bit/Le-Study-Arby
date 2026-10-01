@@ -32,6 +32,7 @@ Open the URL and go. On the deployed HTTPS URL, recording and "Install app" work
 
 - 🎙 **Record & transcribe** a lecture live (Web Speech API — Chrome/Edge; works on the deployed HTTPS site or `localhost`).
 - 📄 **Paste** any text → notes.
+- 📷 **Photo / scan** — snap or upload photos of textbook pages, slides, handwriting, or diagrams (up to 10); Gemini *reads* them (text + figures) and turns them into notes. Images are downscaled in-browser before sending.
 - ▶ **YouTube → lesson** — paste a link and Gemini **watches the video** (audio + visuals) to build a structured lesson. (Very long videos can exceed the free tier; if so, paste the transcript as a fallback — video **⋯ → Show transcript**.)
 - ✺ **Turbo notes**, 🎴 **flashcards**, ❓ **quizzes**, 💬 **chat with your notes**.
 - 🧑‍🏫 **Teach-back (Feynman mode)** — explain a topic in your own words (type or **speak** it) and get graded on your *actual understanding*: a mastery score, what you nailed, your gaps, and misconceptions. Most study apps generate content *for* you — this makes you recall it, which is what makes it stick.

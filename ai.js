@@ -74,6 +74,7 @@ Output only the JSON object.`;
 
 const TASKS = {
   notes:      { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
+  image:      { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
   advanced:   { system: ADVANCED_SYSTEM,   max_tokens: 6000, json: true },
   lesson:     { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
   video:      { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
@@ -128,6 +129,14 @@ function buildBody(task, payload, cfg) {
       ] }],
       generationConfig,
     };
+  }
+
+  if (task === "image") {
+    // Gemini reads photos/scans of study material (textbook pages, slides, handwriting, diagrams).
+    const images = Array.isArray(payload?.images) ? payload.images : [];
+    const parts = images.slice(0, 10).map((img) => ({ inline_data: { mime_type: img.mime || "image/jpeg", data: img.data } }));
+    parts.push({ text: "These images are photos or scans of study material — textbook pages, slides, handwritten notes, or diagrams. Read ALL of them carefully: transcribe the text accurately, describe any important diagrams or figures, and turn everything into clean, organised study notes following the system instructions." });
+    return { system_instruction: { parts: [{ text: cfg.system }] }, contents: [{ role: "user", parts }], generationConfig };
   }
 
   if (task === "feynman") {

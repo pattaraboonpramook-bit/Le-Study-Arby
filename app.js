@@ -40,6 +40,7 @@ const state = {
   ytTitle: "",
   ytManual: "",             // YouTube transcript (fetched or pasted)
   ytStatus: "",
+  images: [],               // picked photos for the Photo capture mode
   fc: { order: [], i: 0, flipped: false },
   quiz: { answers: {} },
   chat: null,               // loaded lazily
@@ -283,7 +284,7 @@ function titleFromMarkdown(md, fallback = "Untitled note") {
 }
 
 const fmtDate = (d) => new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-const sourceLabel = { record: "Recording", paste: "Pasted", youtube: "YouTube" };
+const sourceLabel = { record: "Recording", paste: "Pasted", youtube: "YouTube", image: "Photos" };
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 function currentTheme() {
@@ -582,8 +583,8 @@ function wireAdmin() {
 // ── Capture ──────────────────────────────────────────────────────────────────
 function captureHTML() {
   const mode = state.captureMode;
-  const seg = ["record", "paste", "youtube"].map((m) =>
-    `<button data-mode="${m}" class="${m === mode ? "active" : ""}">${{ record: "🎙 Record", paste: "📄 Paste", youtube: "▶ YouTube" }[m]}</button>`).join("");
+  const seg = ["record", "paste", "youtube", "image"].map((m) =>
+    `<button data-mode="${m}" class="${m === mode ? "active" : ""}">${{ record: "🎙 Record", paste: "📄 Paste", youtube: "▶ YouTube", image: "📷 Photo" }[m]}</button>`).join("");
 
   let body = "";
   if (mode === "record") {
@@ -598,7 +599,7 @@ function captureHTML() {
           <textarea class="input" id="paste-area" style="margin-top:16px" placeholder="Type or paste your material…">${escapeHtml(state.transcript)}</textarea></div>`;
   } else if (mode === "paste") {
     body = `<textarea class="input" id="paste-area" style="min-height:280px" placeholder="Paste your lecture transcript, textbook section, or messy notes here…">${escapeHtml(state.transcript)}</textarea>`;
-  } else {
+  } else if (mode === "youtube") {
     body = `<label class="field-label" style="display:block;margin-bottom:6px">YouTube link</label>
       <input class="input" id="yt-url" placeholder="https://www.youtube.com/watch?v=…" value="${escapeHtml(state.sourceRef || "")}" />
       <p style="color:var(--muted);margin:10px 0 4px;font-size:.9rem">Paste the link and press <strong>Make lesson</strong> — Recall watches the video for you. <strong>No transcript needed.</strong></p>
@@ -606,10 +607,20 @@ function captureHTML() {
         <summary>Very long video or no captions? Paste a transcript instead</summary>
         <textarea class="input" id="yt-manual" style="min-height:150px;margin-top:10px" placeholder="Optional — video ⋯ → Show transcript → copy → paste here">${escapeHtml(state.ytManual || "")}</textarea>
       </details>`;
+  } else {
+    const thumbs = state.images.map((im, i) =>
+      `<div class="imgthumb"><img src="${im.url}" alt="" /><button class="imgrm" data-i="${i}" title="Remove" aria-label="Remove">✕</button></div>`).join("");
+    body = `<label class="dropzone" id="imgdrop">
+        <input type="file" id="img-input" accept="image/*" multiple hidden />
+        <div class="dz-ic">📷</div>
+        <div class="dz-main">Tap to add photos</div>
+        <div class="dz-sub">Textbook pages, slides, handwriting, diagrams — add several, I'll read them all.</div>
+      </label>
+      ${state.images.length ? `<div class="imggrid">${thumbs}</div>` : ""}`;
   }
 
-  const canTurbo = state.transcript.trim().length > 0 || mode === "paste" || mode === "youtube";
-  const turboLabel = mode === "youtube" ? "✺ Make lesson" : "✺ Turbo it";
+  const canTurbo = state.transcript.trim().length > 0 || mode === "paste" || mode === "youtube" || (mode === "image" && state.images.length > 0);
+  const turboLabel = mode === "youtube" ? "✺ Make lesson" : mode === "image" ? "✺ Read & make notes" : "✺ Turbo it";
   return `<div class="capture">
     <div class="note-head" style="margin-bottom:18px">
       <button class="btn btn-icon btn-ghost" id="back" aria-label="Back">←</button>
@@ -636,8 +647,49 @@ function wireCapture() {
   const rec = $("#rec-btn");
   if (rec) rec.onclick = toggleRecognition;
 
+  const imgInput = $("#img-input");
+  if (imgInput) imgInput.onchange = () => { addImages(imgInput.files); imgInput.value = ""; };
+  $$(".imgrm").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); state.images.splice(+b.dataset.i, 1); renderView(); }));
+
   const turbo = $("#turbo");
   if (turbo) turbo.onclick = runTurbo;
+}
+
+// Read + downscale picked images to keep requests small and fast.
+function resizeImage(file, max = 1568, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > max || h > max) { const s = max / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        const url = c.toDataURL("image/jpeg", quality);
+        resolve({ url, data: url.split(",")[1] });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addImages(fileList) {
+  const files = [...(fileList || [])].filter((f) => f.type.startsWith("image/"));
+  if (!files.length) return;
+  const room = 10 - state.images.length;
+  if (room <= 0) { toast("That's the max of 10 photos.", "error"); return; }
+  busy(true, "Processing photos…");
+  try {
+    for (const f of files.slice(0, room)) {
+      const { data, url } = await resizeImage(f);
+      state.images.push({ name: f.name, mime: "image/jpeg", data, url });
+    }
+    renderView();
+  } catch { toast("Couldn't read one of those images.", "error"); } finally { busy(false); }
 }
 
 function syncPasteArea() {
@@ -692,7 +744,10 @@ async function runTurbo() {
   const isYouTube = mode === "youtube";
   let task, payload, transcript = "", busyLabel;
 
-  if (isYouTube) {
+  if (mode === "image") {
+    if (!state.images.length) { toast("Add at least one photo first.", "error"); return; }
+    task = "image"; payload = { images: state.images.map((i) => ({ mime: i.mime, data: i.data })) }; busyLabel = "Reading your photos…";
+  } else if (isYouTube) {
     const manual = ($("#yt-manual")?.value || "").trim();
     const url = ($("#yt-url")?.value || "").trim();
     state.sourceRef = url || null;
@@ -710,7 +765,7 @@ async function runTurbo() {
     const notes_md = await aiGenerate(task, payload);
     const note = await createNote({
       title: titleFromMarkdown(notes_md, state.ytTitle || "Untitled note"),
-      source_type: isYouTube ? "youtube" : (mode === "record" ? "record" : "paste"),
+      source_type: mode === "image" ? "image" : isYouTube ? "youtube" : (mode === "record" ? "record" : "paste"),
       source_ref: state.sourceRef || null,
       transcript,
       notes_md,
@@ -718,7 +773,7 @@ async function runTurbo() {
       quiz: [],
     });
     // reset capture state
-    state.transcript = ""; state.sourceRef = null; state.ytTitle = ""; state.ytManual = ""; state.ytStatus = "";
+    state.transcript = ""; state.sourceRef = null; state.ytTitle = ""; state.ytManual = ""; state.ytStatus = ""; state.images = [];
     openNoteObject(note);
     toast(praise(), "success");
     confetti();
@@ -1409,7 +1464,7 @@ function goCapture() {
   state.view = "capture";
   state.captureMode = "record";
   state.transcript = ""; state.sourceRef = null; state.ytTitle = ""; state.sourceType = "record";
-  state.ytManual = ""; state.ytStatus = "";
+  state.ytManual = ""; state.ytStatus = ""; state.images = [];
   renderView();
 }
 async function goLibrary() {
