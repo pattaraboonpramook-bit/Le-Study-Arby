@@ -1243,6 +1243,15 @@ function podcastTabHTML() {
   const supported = "speechSynthesis" in window;
   const lines = script.map((t, i) =>
     `<div class="pod-line ${t.speaker === "B" ? "b" : "a"}" data-idx="${i}"><span class="pod-who">${HOSTS[t.speaker] || HOSTS.A}</span><span class="pod-text">${escapeHtml(t.text)}</span></div>`).join("");
+  const picks = pickVoices();
+  const voices = allEnglishVoices();
+  const vopts = (curName) => voices.map((v) =>
+    `<option value="${escapeHtml(v.name)}"${v.name === curName ? " selected" : ""}>${escapeHtml(v.name.replace(/\(.*?\)/g, "").trim() || v.name)}${v.localService === false ? " · online" : ""}</option>`).join("");
+  const voiceRow = (supported && voices.length)
+    ? `<div class="pod-voices">
+        <label>🔊 Alex<select id="voice-a">${vopts(picks.a && picks.a.name)}</select></label>
+        <label>Sam<select id="voice-b">${vopts(picks.b && picks.b.name)}</select></label>
+      </div>` : "";
   const player = supported
     ? `<div class="pod-player">
         <button class="btn btn-primary btn-icon" id="pod-play" aria-label="Play">▶</button>
@@ -1254,8 +1263,8 @@ function podcastTabHTML() {
       </div>`
     : `<p style="color:var(--text-2);margin-bottom:12px">Audio playback isn't supported in this browser — here's the script to read:</p>
        <div style="text-align:right;margin-bottom:8px"><button class="btn btn-outline btn-sm" id="regen-pod">↻ New script</button></div>`;
-  return `<div class="panel podcast">${player}<div class="pod-script" id="pod-script">${lines}</div>
-    <p style="color:var(--muted);font-size:.8rem;margin-top:14px;text-align:center">Voices come from your device — tap a line to start from there.</p></div>`;
+  return `<div class="panel podcast">${player}${voiceRow}<div class="pod-script" id="pod-script">${lines}</div>
+    <p style="color:var(--muted);font-size:.8rem;margin-top:14px;text-align:center">${voices.length ? "Pick the voices you like — then press play. " : "Voices load from your device. "}Tap any line to start from there.</p></div>`;
 }
 
 function wirePodcast() {
@@ -1265,7 +1274,19 @@ function wirePodcast() {
   const stop = $("#pod-stop"); if (stop) stop.onclick = stopPodcast;
   const rate = $("#pod-rate"); if (rate) rate.onchange = () => { ttsState.rate = parseFloat(rate.value) || 1; };
   const rg = $("#regen-pod"); if (rg) rg.onclick = generatePodcast;
+  const va = $("#voice-a"); if (va) va.onchange = () => { setSavedVoice("a", va.value); previewVoice(va.value, "Hi, I'm Alex — this is how I'll sound."); };
+  const vb = $("#voice-b"); if (vb) vb.onchange = () => { setSavedVoice("b", vb.value); previewVoice(vb.value, "And I'm Sam. Ready when you are."); };
   $$(".pod-line").forEach((el) => (el.onclick = () => startPodcast(+el.dataset.idx)));
+}
+
+// Speak a short sample so the user can hear a voice before committing.
+function previewVoice(name, text) {
+  const synth = window.speechSynthesis; if (!synth) return;
+  stopSpeech();
+  const u = new SpeechSynthesisUtterance(text);
+  const v = voiceByName(name); if (v) u.voice = v;
+  u.rate = ttsState.rate || 1;
+  try { synth.speak(u); } catch {}
 }
 
 async function generatePodcast() {
@@ -1286,10 +1307,34 @@ async function generatePodcast() {
 }
 
 // ── Text-to-speech engine ────────────────────────────────────────────────────
+const allEnglishVoices = () => (window.speechSynthesis?.getVoices() || []).filter((v) => /^en/i.test(v.lang));
+const savedVoice = (who) => { try { return localStorage.getItem("recall_voice_" + who) || ""; } catch { return ""; } };
+const setSavedVoice = (who, name) => { try { localStorage.setItem("recall_voice_" + who, name || ""); } catch {} };
+const voiceByName = (name) => (name ? allEnglishVoices().find((v) => v.name === name) || null : null);
+
+// Score a voice — higher is more natural/pleasant.
+function rankVoice(v) {
+  const n = v.name.toLowerCase(), l = (v.lang || "").toLowerCase();
+  let s = 0;
+  if (/natural|neural/.test(n)) s += 60;               // MS "Natural" neural voices
+  if (/\bgoogle\b/.test(n)) s += 50;                   // Chrome Google voices
+  if (/online/.test(n)) s += 40;
+  if (/premium|enhanced|siri/.test(n)) s += 30;
+  if (v.localService === false) s += 12;               // network voices tend to be nicer
+  if (l.startsWith("en-us")) s += 14; else if (l.startsWith("en-gb")) s += 11; else if (l.startsWith("en")) s += 6;
+  if (/david|mark|hazel|zira|microsoft (david|mark|zira|hazel)/.test(n)) s -= 10; // dated/robotic
+  return s;
+}
+
+// Two distinct, pleasant voices (honours saved preferences; tries female + male for variety).
 function pickVoices() {
-  const all = (window.speechSynthesis?.getVoices() || []).filter((v) => /^en/i.test(v.lang));
-  const a = all[0] || null;
-  const b = all.find((v) => v.name !== a?.name) || all[1] || a;
+  const all = allEnglishVoices();
+  if (!all.length) return { a: null, b: null };
+  const ranked = [...all].sort((x, y) => rankVoice(y) - rankVoice(x));
+  const FEM = /female|aria|jenny|michelle|clara|sonia|libby|natasha|samantha|emma|ava|nova|zira|google us english$|uk english female/i;
+  const MALE = /\bmale\b|guy|davis|david|mark|ryan|william|brian|eric|uk english male/i;
+  const a = voiceByName(savedVoice("a")) || ranked.find((v) => FEM.test(v.name)) || ranked[0];
+  const b = voiceByName(savedVoice("b")) || ranked.find((v) => v.name !== a.name && MALE.test(v.name)) || ranked.find((v) => v.name !== a.name) || a;
   return { a, b };
 }
 function setPlayBtn(sym) { const b = $("#pod-play"); if (b) b.textContent = sym; }
@@ -1561,7 +1606,14 @@ if ("serviceWorker" in navigator) {
 
 // Warm up TTS voices (some browsers load them asynchronously).
 if (window.speechSynthesis) {
-  try { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices(); } catch {}
+  try {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => {
+      window.speechSynthesis.getVoices();
+      // Voices often load a moment late — refresh the podcast picker once they do.
+      if (state.view === "note" && state.noteTab === "podcast" && !ttsState.playing) renderNotePanel();
+    };
+  } catch {}
 }
 // Stop any narration if the app is closed/backgrounded.
 window.addEventListener("pagehide", () => { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch {} });

@@ -343,6 +343,9 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
   border-radius: 999px; padding: 10px 14px; box-shadow: var(--shadow); margin-bottom: 18px; }
 .pod-rate { display: flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--text-2); }
 .pod-rate select { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 4px 8px; color: var(--text); }
+.pod-voices { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.pod-voices label { display: flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--text-2); font-weight: 700; }
+.pod-voices select { font: inherit; font-weight: 500; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); max-width: 170px; }
 .pod-script { display: flex; flex-direction: column; gap: 10px; }
 .pod-line { display: flex; gap: 12px; padding: 12px 14px; border-radius: var(--radius-sm); cursor: pointer;
   border: 1px solid transparent; transition: background .15s, border-color .15s; }
