@@ -69,10 +69,14 @@ Rules: exactly 4 options per question; "answer" is the 0-based index of the corr
 
 const CHAT_SYSTEM = `You are a friendly, sharp study tutor. Answer the student's questions using their study notes below as your primary source. Be clear and concise, use short examples where they help, and format with Markdown when useful. If the notes don't cover something, say so briefly and then give your best general explanation. Don't make up specifics that would appear in their course if they aren't in the notes.`;
 
-const PODCAST_SYSTEM = `You write a short, upbeat two-host study podcast (an "audio overview"). Two hosts — A (Alex) and B (Sam) — chat through the student's material in a friendly, engaging way that helps them understand and remember it. Cover the key concepts accurately, add a little personality and the occasional light quip, and keep it flowing.
+const PODCAST_SYSTEM = `You write a warm, natural two-host study podcast (an "audio overview") that sounds like two real people actually talking — not a script being read aloud. Two hosts — A (Alex) and B (Sam) — walk through the student's material together in a friendly, curious way that helps them understand and remember it.
 Return ONLY a JSON array of turns that alternate speakers, shaped exactly:
 [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]
-Rules: base everything strictly on the provided material (don't invent facts); 12–18 turns; each turn 1–3 sentences of natural spoken language (no stage directions, no markdown, no sound effects); open with a quick hook and end with a one-line recap of what to remember.`;
+Make it sound genuinely human:
+- Real back-and-forth: the hosts react to each other ("Right —", "Oh, that's the important bit", "Wait, so…"), ask each other questions, finish thoughts, and add the occasional light, tasteful quip.
+- Natural speech: use contractions and everyday phrasing, and vary the rhythm — mix short punchy lines with a couple of longer ones. Never write stage directions, sound effects, markdown, or the speaker's name inside the text.
+- Teach, don't recite: drop in quick analogies and concrete examples so the ideas actually land.
+Rules: base everything strictly on the provided material (don't invent facts); each turn is 1–3 sentences of spoken language; open with a quick hook and end with a one-line recap of what to remember.`;
 
 const FEYNMAN_SYSTEM = `You are a supportive but rigorous tutor using the Feynman technique. A student has tried to explain a topic in their own words. Compare their explanation to the REFERENCE NOTES and judge how well they actually understand it.
 Return ONLY a JSON object (no prose, no code fences):
@@ -96,11 +100,11 @@ const TASKS = {
   advanced:   { system: ADVANCED_SYSTEM,   max_tokens: 6000, json: true },
   lesson:     { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
   video:      { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
-  flashcards: { system: FLASHCARDS_SYSTEM, max_tokens: 4000, json: true },
-  quiz:       { system: QUIZ_SYSTEM,       max_tokens: 4000, json: true },
+  flashcards: { system: FLASHCARDS_SYSTEM, max_tokens: 6000, json: true },
+  quiz:       { system: QUIZ_SYSTEM,       max_tokens: 8000, json: true },
   chat:       { system: CHAT_SYSTEM,       max_tokens: 4000, json: false },
   feynman:    { system: FEYNMAN_SYSTEM,    max_tokens: 2000, json: true },
-  podcast:    { system: PODCAST_SYSTEM,    max_tokens: 4000, json: true },
+  podcast:    { system: PODCAST_SYSTEM,    max_tokens: 8000, json: true },
 };
 
 function extractJson(text) {
@@ -137,6 +141,22 @@ function difficultyDirective(task, d) {
   if (d === "Easy") return `\n\nDIFFICULTY: Make these EASY. Focus on the core definitions and most important basic facts — straightforward recall.${task === "quiz" ? " Keep the wrong options clearly distinguishable from the correct answer." : ""}`;
   if (d === "Hard") return `\n\nDIFFICULTY: Make these HARD. Test deep understanding, application, nuance, and edge cases rather than simple recall.${task === "quiz" ? " Use plausible, tempting distractors that require careful reasoning to rule out." : " Phrase the fronts so they demand real understanding, not just term-matching."}`;
   return `\n\nDIFFICULTY: Make these MEDIUM — a balanced mix of straightforward recall and questions that require understanding and connecting ideas.`;
+}
+
+// How many items to produce (flashcards / quiz questions).
+function countDirective(task, n) {
+  const c = Math.max(3, Math.min(40, parseInt(n, 10) || 0));
+  if (!c) return "";
+  if (task === "quiz") return `\n\nCOUNT: Create exactly ${c} questions — no more, no fewer.`;
+  return `\n\nCOUNT: Create exactly ${c} flashcards — no more, no fewer.`;
+}
+
+// Roughly how long the spoken podcast should run (in minutes).
+function podcastLengthDirective(minutes) {
+  const m = Math.max(1, Math.min(15, parseInt(minutes, 10) || 0));
+  if (!m) return "";
+  const turns = Math.max(6, Math.min(48, Math.round(m * 4.5)));
+  return `\n\nTARGET LENGTH: Aim for roughly ${m} minute${m === 1 ? "" : "s"} of spoken audio — about ${turns} turns in total. Match the depth to the time: for a longer target go further with examples, analogies, and back-and-forth; for a short one keep it tight and cover only the essentials.`;
 }
 
 function buildBody(task, payload, cfg) {
@@ -199,9 +219,11 @@ function buildBody(task, payload, cfg) {
   const source = String(payload?.source || "").slice(0, MAX_SOURCE);
   const label = task === "lesson" ? "VIDEO TRANSCRIPT" : "SOURCE MATERIAL";
   let sys = cfg.system;
-  if ((task === "flashcards" || task === "quiz") && payload?.difficulty) {
-    sys += difficultyDirective(task, payload.difficulty);
+  if (task === "flashcards" || task === "quiz") {
+    if (payload?.difficulty) sys += difficultyDirective(task, payload.difficulty);
+    if (payload?.count) sys += countDirective(task, payload.count);
   }
+  if (task === "podcast" && payload?.minutes) sys += podcastLengthDirective(payload.minutes);
   return {
     system_instruction: { parts: [{ text: sys }] },
     contents: [{ role: "user", parts: [{ text: `${label}:\n\n${source}` }] }],

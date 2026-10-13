@@ -60,10 +60,12 @@ const state = {
   podcastScript: null,      // [{speaker,text}] audio-overview script
   advanced: null,           // {deepDive, mainPoints[]}
   authMode: "signin",
+  selectMode: false,        // library multi-select (for combining notes)
+  selected: new Set(),      // ids picked while in select mode
 };
 
 let dictation = null;       // speech-to-text for teach-back (separate from capture)
-let ttsState = { playing: false, paused: false, rate: 1, curTurn: 0 }; // podcast playback
+let ttsState = { playing: false, paused: false, rate: 1, volume: 1, curTurn: 0 }; // podcast playback
 
 let recognition = null;
 let recording = false;
@@ -297,12 +299,30 @@ function titleFromMarkdown(md, fallback = "Untitled note") {
 const fmtDate = (d) => new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 const sourceLabel = { record: "Recording", paste: "Pasted", youtube: "YouTube", image: "Photos" };
 
-// Difficulty for flashcards / quizzes (stored per-device).
+// Difficulty + count for flashcards / quizzes (stored per-device).
 const getDifficulty = () => { try { return localStorage.getItem("recall_difficulty") || "Medium"; } catch { return "Medium"; } };
 const setDifficulty = (d) => { try { localStorage.setItem("recall_difficulty", d); } catch {} };
-function difficultyBar() {
+const getCount = (kind, def) => { try { const v = parseInt(localStorage.getItem("recall_count_" + kind), 10); return v > 0 ? v : def; } catch { return def; } };
+const setCount = (kind, n) => { try { localStorage.setItem("recall_count_" + kind, String(n)); } catch {} };
+
+// Podcast length (minutes) + playback volume (0–1), stored per-device.
+const getPodMinutes = () => { try { const v = parseInt(localStorage.getItem("recall_pod_minutes"), 10); return v > 0 ? v : 5; } catch { return 5; } };
+const setPodMinutes = (n) => { try { localStorage.setItem("recall_pod_minutes", String(n)); } catch {} };
+const getPodVolume = () => { try { const v = parseInt(localStorage.getItem("recall_pod_volume"), 10); return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) / 100 : 1; } catch { return 1; } };
+const setPodVolume = (v01) => { try { localStorage.setItem("recall_pod_volume", String(Math.round(v01 * 100))); } catch {} };
+
+// Study-tools bar (difficulty + how many) for the Flashcards / Quiz tabs.
+function toolsBar(kind) {
   const cur = getDifficulty();
-  return `<div class="tab-tools"><span class="tt-label">Difficulty</span><div class="diffbar">${["Easy", "Medium", "Hard"].map((d) => `<button class="diff-opt ${d === cur ? "active" : ""}" data-diff="${d}">${d}</button>`).join("")}</div></div>`;
+  const label = kind === "quiz" ? "Questions" : "Cards";
+  const n = getCount(kind, kind === "quiz" ? 8 : 10);
+  const counts = [5, 8, 10, 15, 20, 25];
+  const diff = ["Easy", "Medium", "Hard"].map((d) => `<button class="diff-opt ${d === cur ? "active" : ""}" data-diff="${d}">${d}</button>`).join("");
+  const nums = counts.map((c) => `<button class="num-opt ${c === n ? "active" : ""}" data-kind="${kind}" data-count="${c}">${c}</button>`).join("");
+  return `<div class="tab-tools">
+    <span class="tt-label">Difficulty</span><div class="diffbar">${diff}</div>
+    <span class="tt-label">${label}</span><div class="numbar">${nums}</div>
+  </div>`;
 }
 
 // ── Theme ────────────────────────────────────────────────────────────────────
@@ -505,7 +525,10 @@ function libraryHTML() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input class="input" id="search" placeholder="Search notes" value="${escapeHtml(state.search)}" />
       </div>
-      <button class="btn btn-primary" id="new-note">＋ New note</button>
+      ${state.selectMode
+        ? `<button class="btn btn-ghost" id="combine-cancel">Cancel</button>`
+        : `${(state.notes && state.notes.length >= 2) ? `<button class="btn btn-outline" id="combine-start">⛓ Combine</button>` : ""}
+           <button class="btn btn-primary" id="new-note">＋ New note</button>`}
     </div>
   </div>`;
 
@@ -523,20 +546,33 @@ function libraryHTML() {
   }
   if (filtered.length === 0) return head + `<div class="empty"><p>No notes match “${escapeHtml(state.search)}”.</p></div>`;
 
-  const cards = filtered.map((n) => `
-    <button class="note-card" data-id="${n.id}">
+  const sel = state.selectMode;
+  const cards = filtered.map((n) => {
+    const on = state.selected.has(n.id);
+    return `<button class="note-card ${sel ? "selectable" : ""} ${on ? "selected" : ""}" data-id="${n.id}">
+      ${sel ? `<span class="note-check">${on ? "✓" : ""}</span>` : ""}
       <h3>${escapeHtml(n.title)}</h3>
       <div class="meta">
         <span class="pill ${n.source_type}">${sourceLabel[n.source_type] || n.source_type}</span>
         <span>${fmtDate(n.updated_at)}</span>
       </div>
-    </button>`).join("");
-  return head + `<div class="note-grid">${cards}</div>`;
+    </button>`;
+  }).join("");
+  const bar = sel
+    ? `<div class="combine-bar">
+        <span>${state.selected.size} selected</span>
+        <button class="btn btn-primary" id="combine-go"${state.selected.size < 2 ? " disabled" : ""}>⛓ Combine ${state.selected.size >= 2 ? state.selected.size + " notes" : "notes"}</button>
+       </div>`
+    : "";
+  return head + `<div class="note-grid">${cards}</div>` + bar;
 }
 
 function wireLibrary() {
   const nb = $("#new-note"); if (nb) nb.onclick = goCapture;
   const nb2 = $("#new-note-2"); if (nb2) nb2.onclick = goCapture;
+  const cs = $("#combine-start"); if (cs) cs.onclick = () => { state.selectMode = true; state.selected = new Set(); renderView(); };
+  const cc = $("#combine-cancel"); if (cc) cc.onclick = exitSelectMode;
+  const cg = $("#combine-go"); if (cg) cg.onclick = combineSelected;
   const s = $("#search");
   if (s) s.oninput = () => {
     state.search = s.value;
@@ -546,7 +582,45 @@ function wireLibrary() {
     grid.innerHTML = libraryHTML(); wireLibrary();
     const s2 = $("#search"); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); }
   };
-  $$(".note-card").forEach((c) => (c.onclick = () => openNote(c.dataset.id)));
+  $$(".note-card").forEach((c) => (c.onclick = () => {
+    if (state.selectMode) {
+      const id = c.dataset.id;
+      if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
+      renderView();
+    } else openNote(c.dataset.id);
+  }));
+}
+
+function exitSelectMode() { state.selectMode = false; state.selected = new Set(); renderView(); }
+
+// Merge several notes into one new note (concatenates their content under
+// per-source headings; the student can then regenerate/enhance from the result).
+async function combineSelected() {
+  const picked = (state.notes || []).filter((n) => state.selected.has(n.id));
+  if (picked.length < 2) { toast("Pick at least 2 notes to combine.", "error"); return; }
+  const defTitle = picked.map((n) => n.title).join(" + ").slice(0, 80);
+  const title = (window.prompt("Name the combined note", defTitle) || "").trim();
+  if (!title) return;
+  busy(true, "Combining notes…");
+  try {
+    const stripTop = (md) => String(md || "").replace(/^\s*#\s+.*(\r?\n)+/, "");
+    const parts = [], transcripts = [];
+    for (const meta of picked) {
+      const full = await getNote(meta.id);
+      const body = (full.notes_md || full.transcript || "").trim();
+      if (body) parts.push(`## ${full.title}\n\n${full.notes_md ? stripTop(body) : body}`);
+      if (full.transcript && full.transcript.trim()) transcripts.push(`— ${full.title} —\n${full.transcript.trim()}`);
+    }
+    if (!parts.length) throw new Error("Those notes have no content to combine yet.");
+    const notes_md = `# ${title}\n\n${parts.join("\n\n---\n\n")}`;
+    const created = await createNote({
+      title, source_type: "paste", source_ref: null,
+      transcript: transcripts.join("\n\n"), notes_md, flashcards: [], quiz: [],
+    });
+    state.selectMode = false; state.selected = new Set();
+    toast(`Combined ${picked.length} notes ✓`, "success");
+    openNoteObject(created);
+  } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
 
 // ── Admin panel (admins only; RLS enforces this on the server too) ───────────
@@ -837,7 +911,7 @@ function openNoteObject(note) {
   state.feynmanText = "";
   state.podcastScript = getPodcastLS(note.id);
   state.advanced = getAdvancedLS(note.id);
-  ttsState = { playing: false, paused: false, rate: 1, curTurn: 0 };
+  ttsState = { playing: false, paused: false, rate: 1, volume: getPodVolume(), curTurn: 0 };
   render();
 }
 
@@ -925,6 +999,92 @@ function pickLanguage(onPick) {
   o.addEventListener("click", (e) => { if (e.target === o) close(); });
   $("#lp-close").onclick = close;
   o.querySelectorAll(".lang-opt").forEach((b) => (b.onclick = () => { close(); onPick(b.dataset.v); }));
+}
+
+// ── Explainer: an on-demand "explain this to me" conversation ────────────────
+// Reused by the quiz (why an answer is right/wrong) and by selecting text in a
+// note. Seeded with one question, then the student can ask for it simpler,
+// deeper, like-they're-five, or in their own words. Answers come from the note.
+function openExplainer({ heading, seedQuestion, seedLabel }) {
+  const n = state.current || {};
+  const context = (n.notes_md || n.transcript || "").trim();
+  const history = [];
+
+  const o = document.createElement("div");
+  o.className = "stats-overlay explainer-overlay";
+  o.innerHTML = `<div class="stats-card explainer-card">
+    <button class="stats-close" id="ex-close" aria-label="Close">✕</button>
+    <h3 class="stats-h" style="margin-bottom:12px">${escapeHtml(heading || "Explain this")}</h3>
+    <div class="ex-body" id="ex-body"></div>
+    <div class="ex-quick" id="ex-quick">
+      <button class="chip-btn" data-style="eli5">🧒 Like I'm 5</button>
+      <button class="chip-btn" data-style="more">🔬 More detail</button>
+      <button class="chip-btn" data-style="simpler">🙂 Still confused</button>
+      <button class="chip-btn" data-style="example">🧩 Give an example</button>
+    </div>
+    <form class="ex-form" id="ex-form">
+      <input class="input" id="ex-input" placeholder="Ask a follow-up…" autocomplete="off" />
+      <button class="btn btn-primary btn-sm" type="submit" aria-label="Ask">↑</button>
+    </form>
+  </div>`;
+  document.body.appendChild(o);
+  const body = $("#ex-body");
+  const close = () => o.remove();
+  $("#ex-close").onclick = close;
+  o.addEventListener("click", (e) => { if (e.target === o) close(); });
+  document.addEventListener("keydown", function esc(e) { if (e.key === "Escape") { close(); document.removeEventListener("keydown", esc); } });
+
+  let asking = false;
+  async function ask(question, label) {
+    if (asking || !question) return;
+    asking = true;
+    body.insertAdjacentHTML("beforeend",
+      `<div class="ex-q">${escapeHtml(label || question)}</div><div class="ex-a" data-pending="1"><span class="spinner spinner-sm"></span></div>`);
+    body.scrollTop = body.scrollHeight;
+    const pending = body.querySelector('.ex-a[data-pending="1"]');
+    try {
+      const ans = await aiGenerate("chat", { context, history, question });
+      history.push({ role: "user", content: question }, { role: "assistant", content: ans });
+      if (history.length > 20) history.splice(0, history.length - 20);
+      pending.innerHTML = `<div class="prose">${mdToHtml(ans)}</div>`;
+    } catch (err) {
+      pending.innerHTML = `<span style="color:var(--bad)">${escapeHtml(err.message)}</span>`;
+    }
+    pending.removeAttribute("data-pending");
+    body.scrollTop = body.scrollHeight;
+    asking = false;
+  }
+
+  const STYLES = {
+    eli5: "Explain that again as if I were five years old — very simple words and an everyday analogy.",
+    more: "Go deeper on that: more detail and the underlying reasoning, while keeping it clear.",
+    simpler: "I'm still confused — explain that more simply, step by step.",
+    example: "Give me one concrete example that makes that click.",
+  };
+  o.querySelectorAll("#ex-quick .chip-btn").forEach((b) =>
+    (b.onclick = () => ask(STYLES[b.dataset.style], b.textContent)));
+  $("#ex-form").onsubmit = (e) => {
+    e.preventDefault();
+    const i = $("#ex-input"); const q = i.value.trim(); if (!q) return;
+    i.value = ""; ask(q);
+  };
+
+  ask(seedQuestion, seedLabel || "Explain this");
+}
+
+// Explain a specific quiz question — why the right answer is right (and, if they
+// missed it, why their pick was wrong), then let them dig in further.
+function explainQuizQuestion(qi) {
+  const quiz = state.current.quiz || [];
+  const q = quiz[qi];
+  if (!q) return;
+  const sel = state.quiz.answers[qi];
+  const letters = q.options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join("\n");
+  const correct = String.fromCharCode(65 + q.answer);
+  const chose = sel !== undefined ? String.fromCharCode(65 + sel) : null;
+  const wrong = chose && sel !== q.answer;
+  const seed = `I'm revising and just did this multiple-choice question. In clear detail, explain why the correct answer is right${wrong ? `, and why my answer (${chose}) is wrong` : ""}. Base it on the study notes.\n\nQuestion: ${q.question}\nOptions:\n${letters}\nCorrect answer: ${correct}.${chose ? ` My answer: ${chose}.` : ""}`;
+  openExplainer({ heading: wrong ? "Why that's not quite right" : "Why this is the answer", seedQuestion: seed, seedLabel: q.question });
 }
 
 async function translateNote() {
@@ -1023,12 +1183,12 @@ async function generateAdvanced() {
 function flashTabHTML() {
   const cards = state.current.flashcards || [];
   if (cards.length === 0) {
-    return difficultyBar() + genCTA("🎴", "No flashcards yet", "Generate a deck from your notes and start studying.", "gen-fc", "Generate flashcards");
+    return toolsBar("flashcards") + genCTA("🎴", "No flashcards yet", "Generate a deck from your notes and start studying.", "gen-fc", "Generate flashcards");
   }
   const order = state.fc.order.length ? state.fc.order : cards.map((_, i) => i);
   const idx = order[state.fc.i];
   const card = cards[idx];
-  return difficultyBar() + `<div class="panel fc-stage">
+  return toolsBar("flashcards") + `<div class="panel fc-stage">
     <div class="fc-progress">Card ${state.fc.i + 1} of ${cards.length}</div>
     <div class="flashcard ${state.fc.flipped ? "flipped" : ""}" id="flashcard">
       <div class="flashcard-inner">
@@ -1046,6 +1206,7 @@ function flashTabHTML() {
 }
 function wireFlash() {
   $$(".diff-opt").forEach((b) => (b.onclick = () => { setDifficulty(b.dataset.diff); renderNotePanel(); }));
+  $$(".num-opt").forEach((b) => (b.onclick = () => { setCount(b.dataset.kind, +b.dataset.count); renderNotePanel(); }));
   const g = $("#gen-fc"); if (g) { g.onclick = () => generateFlashcards(); return; }
   $("#flashcard").onclick = () => { state.fc.flipped = !state.fc.flipped; $("#flashcard").classList.toggle("flipped"); };
   $("#fc-prev").onclick = () => { state.fc.i = (state.fc.i - 1 + state.current.flashcards.length) % state.current.flashcards.length; state.fc.flipped = false; renderNotePanel(); };
@@ -1061,7 +1222,7 @@ async function generateFlashcards() {
   const n = state.current;
   busy(true, "Making flashcards…");
   try {
-    const result = await aiGenerate("flashcards", { source: n.notes_md || n.transcript, difficulty: getDifficulty() });
+    const result = await aiGenerate("flashcards", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("flashcards", 10) });
     const cards = (Array.isArray(result) ? result : []).filter((c) => c && c.front && c.back);
     if (!cards.length) throw new Error("No cards were generated. Try again.");
     await patchNote({ flashcards: cards });
@@ -1075,7 +1236,7 @@ async function generateFlashcards() {
 function quizTabHTML() {
   const quiz = state.current.quiz || [];
   if (quiz.length === 0) {
-    return difficultyBar() + genCTA("❓", "No quiz yet", "Generate a practice quiz from your notes.", "gen-quiz", "Generate quiz");
+    return toolsBar("quiz") + genCTA("❓", "No quiz yet", "Generate a practice quiz from your notes.", "gen-quiz", "Generate quiz");
   }
   const answered = state.quiz.answers;
   const done = Object.keys(answered).length === quiz.length;
@@ -1093,8 +1254,11 @@ function quizTabHTML() {
       return `<button class="${cls}" data-q="${qi}" data-o="${oi}" ${sel !== undefined ? "disabled" : ""}>
         <span class="tick">${tick}</span><span>${escapeHtml(opt)}</span></button>`;
     }).join("");
-    const explain = sel !== undefined && q.explanation
-      ? `<div class="q-explain">${sel === q.answer ? "✓ Correct. " : "✗ "}${escapeHtml(q.explanation)}</div>` : "";
+    const explain = sel !== undefined
+      ? `<div class="q-explain ${sel === q.answer ? "ok" : "no"}">
+          <div>${q.explanation ? `${sel === q.answer ? "✓ Correct. " : "✗ "}${escapeHtml(q.explanation)}` : (sel === q.answer ? "✓ Correct." : "✗ Not quite.")}</div>
+          <button class="btn btn-ghost btn-sm q-why" data-q="${qi}">💡 Explain in detail</button>
+        </div>` : "";
     return `<div class="q-card"><div class="q">${qi + 1}. ${escapeHtml(q.question)}</div><div class="q-opts">${opts}</div>${explain}</div>`;
   }).join("");
 
@@ -1104,11 +1268,13 @@ function quizTabHTML() {
         <button class="btn btn-primary btn-sm" id="quiz-retake">↻ Retake</button></div>`
     : "";
 
-  return difficultyBar() + `<div class="panel quiz">${cards}${scoreCard}
+  return toolsBar("quiz") + `<div class="panel quiz">${cards}${scoreCard}
     <div style="text-align:center"><button class="btn btn-outline btn-sm" id="regen-quiz">↻ New quiz</button></div></div>`;
 }
 function wireQuiz() {
   $$(".diff-opt").forEach((b) => (b.onclick = () => { setDifficulty(b.dataset.diff); renderNotePanel(); }));
+  $$(".num-opt").forEach((b) => (b.onclick = () => { setCount(b.dataset.kind, +b.dataset.count); renderNotePanel(); }));
+  $$(".q-why").forEach((b) => (b.onclick = () => explainQuizQuestion(+b.dataset.q)));
   const g = $("#gen-quiz"); if (g) { g.onclick = () => generateQuiz(); return; }
   $$(".q-opt").forEach((b) => (b.onclick = () => {
     const qi = +b.dataset.q;
@@ -1131,7 +1297,7 @@ async function generateQuiz() {
   const n = state.current;
   busy(true, "Writing quiz questions…");
   try {
-    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript, difficulty: getDifficulty() });
+    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("quiz", 8) });
     const quiz = (Array.isArray(result) ? result : []).filter(
       (q) => q && q.question && Array.isArray(q.options) && q.options.length >= 2 && Number.isInteger(q.answer));
     if (!quiz.length) throw new Error("No questions were generated. Try again.");
@@ -1262,6 +1428,9 @@ function podcastTabHTML() {
         <label>🔊 Alex<select id="voice-a">${vopts(picks.a && picks.a.name)}</select></label>
         <label>Sam<select id="voice-b">${vopts(picks.b && picks.b.name)}</select></label>
       </div>` : "";
+  const vol = Math.round(getPodVolume() * 100);
+  const mins = getPodMinutes();
+  const minOpts = [2, 3, 5, 8, 10].map((m) => `<option value="${m}"${m === mins ? " selected" : ""}>${m} min</option>`).join("");
   const player = supported
     ? `<div class="pod-player">
         <button class="btn btn-primary btn-icon" id="pod-play" aria-label="Play">▶</button>
@@ -1269,10 +1438,17 @@ function podcastTabHTML() {
         <label class="pod-rate">Speed
           <select id="pod-rate"><option value="0.8">0.8×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select>
         </label>
+        <label class="pod-vol" title="Volume">🔊<input type="range" id="pod-vol" min="0" max="100" value="${vol}" aria-label="Volume"></label>
+        <label class="pod-rate" title="Applies when you make a new script">Length
+          <select id="pod-minutes">${minOpts}</select>
+        </label>
         <button class="btn btn-outline btn-sm" id="regen-pod" style="margin-left:auto">↻ New script</button>
       </div>`
     : `<p style="color:var(--text-2);margin-bottom:12px">Audio playback isn't supported in this browser — here's the script to read:</p>
-       <div style="text-align:right;margin-bottom:8px"><button class="btn btn-outline btn-sm" id="regen-pod">↻ New script</button></div>`;
+       <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-bottom:8px">
+         <label class="pod-rate" title="Applies when you make a new script">Length<select id="pod-minutes">${minOpts}</select></label>
+         <button class="btn btn-outline btn-sm" id="regen-pod">↻ New script</button>
+       </div>`;
   return `<div class="panel podcast">${player}${voiceRow}<div class="pod-script" id="pod-script">${lines}</div>
     <p style="color:var(--muted);font-size:.8rem;margin-top:14px;text-align:center">${voices.length ? "Pick the voices you like — then press play. " : "Voices load from your device. "}Tap any line to start from there.</p></div>`;
 }
@@ -1283,6 +1459,9 @@ function wirePodcast() {
   const play = $("#pod-play"); if (play) play.onclick = togglePodcast;
   const stop = $("#pod-stop"); if (stop) stop.onclick = stopPodcast;
   const rate = $("#pod-rate"); if (rate) rate.onchange = () => { ttsState.rate = parseFloat(rate.value) || 1; };
+  ttsState.volume = getPodVolume();
+  const vol = $("#pod-vol"); if (vol) vol.oninput = () => { ttsState.volume = (parseInt(vol.value, 10) || 0) / 100; setPodVolume(ttsState.volume); };
+  const mins = $("#pod-minutes"); if (mins) mins.onchange = () => setPodMinutes(parseInt(mins.value, 10) || 5);
   const rg = $("#regen-pod"); if (rg) rg.onclick = generatePodcast;
   const va = $("#voice-a"); if (va) va.onchange = () => { setSavedVoice("a", va.value); previewVoice(va.value, "Hi, I'm Alex — this is how I'll sound."); };
   const vb = $("#voice-b"); if (vb) vb.onchange = () => { setSavedVoice("b", vb.value); previewVoice(vb.value, "And I'm Sam. Ready when you are."); };
@@ -1296,6 +1475,7 @@ function previewVoice(name, text) {
   const u = new SpeechSynthesisUtterance(text);
   const v = voiceByName(name); if (v) u.voice = v;
   u.rate = ttsState.rate || 1;
+  u.volume = getPodVolume();
   try { synth.speak(u); } catch {}
 }
 
@@ -1304,7 +1484,7 @@ async function generatePodcast() {
   stopSpeech();
   busy(true, "Recording your podcast…");
   try {
-    const raw = await aiGenerate("podcast", { source: n.notes_md || n.transcript });
+    const raw = await aiGenerate("podcast", { source: n.notes_md || n.transcript, minutes: getPodMinutes() });
     const script = (Array.isArray(raw) ? raw : [])
       .filter((t) => t && t.text)
       .map((t) => ({ speaker: (t.speaker === "B" || /sam|host ?2|b\b/i.test(String(t.speaker))) ? "B" : "A", text: String(t.text) }));
@@ -1373,19 +1553,27 @@ function startPodcast(startTurn) {
     if (ti < startTurn) return;
     (String(turn.text).match(/[^.!?]+[.!?]*/g) || [turn.text]).forEach((s) => { if (s.trim()) queue.push({ ti, sp: turn.speaker, text: s.trim() }); });
   });
-  let qi = 0;
+  let qi = 0, prevTi = -1;
   (function next() {
     if (!ttsState.playing) return;
     if (qi >= queue.length) { finishPodcast(); return; }
     const item = queue[qi];
-    highlightPodLine(item.ti);
-    const u = new SpeechSynthesisUtterance(item.text);
-    u.rate = ttsState.rate || 1;
-    const v = item.sp === "B" ? voices.b : voices.a;
-    if (v) u.voice = v;
-    u.onend = () => { qi++; next(); };
-    u.onerror = () => { qi++; next(); };
-    synth.speak(u);
+    // A short breath between speakers makes the exchange feel more human.
+    const gap = (prevTi !== -1 && item.ti !== prevTi) ? 280 : 55;
+    prevTi = item.ti;
+    setTimeout(() => {
+      if (!ttsState.playing) return;
+      highlightPodLine(item.ti);
+      const u = new SpeechSynthesisUtterance(item.text);
+      u.rate = ttsState.rate || 1;
+      u.volume = ttsState.volume ?? 1;
+      u.pitch = item.sp === "B" ? 0.92 : 1.08;   // give the two hosts distinct voices
+      const v = item.sp === "B" ? voices.b : voices.a;
+      if (v) u.voice = v;
+      u.onend = () => { qi++; next(); };
+      u.onerror = () => { qi++; next(); };
+      synth.speak(u);
+    }, gap);
   })();
 }
 function finishPodcast() {
@@ -1582,6 +1770,7 @@ async function goLibrary() {
   stopSpeech();
   state.view = "library";
   state.notes = null;
+  state.selectMode = false; state.selected = new Set();
   render();
   try {
     state.notes = await listNotes();
@@ -1639,6 +1828,46 @@ async function enterApp() {
   if (state.role === "member" || state.role === "admin") await goLibrary();
   else render(); // pending / blocked
 }
+
+// ── Select-to-explain: highlight text in a note to get a deeper explanation ──
+let explainPill = null;
+function hideExplainPill() { if (explainPill) { explainPill.remove(); explainPill = null; } }
+function setupSelectExplain() {
+  const onSelect = () => {
+    if (state.view !== "note") { hideExplainPill(); return; }
+    const sel = window.getSelection();
+    const text = sel ? sel.toString().trim() : "";
+    const panel = document.getElementById("note-panel");
+    if (!text || text.length < 8 || !panel || !sel.rangeCount || !panel.contains(sel.anchorNode)) { hideExplainPill(); return; }
+    let rect;
+    try { rect = sel.getRangeAt(0).getBoundingClientRect(); } catch { return; }
+    if (!rect || (!rect.width && !rect.height)) return;
+    hideExplainPill();
+    const snippet = text.slice(0, 600);
+    const b = document.createElement("button");
+    b.className = "explain-pill";
+    b.textContent = "💡 Explain";
+    b.style.left = Math.max(10, Math.min(window.innerWidth - 110, rect.left + rect.width / 2)) + "px";
+    b.style.top = Math.max(8, rect.top - 44) + "px";
+    b.addEventListener("mousedown", (e) => e.preventDefault()); // don't drop the selection
+    b.onclick = () => {
+      hideExplainPill();
+      openExplainer({
+        heading: "Explain this",
+        seedQuestion: `Explain this in more detail so a student really understands it. Use the study notes for context:\n\n"${snippet}"`,
+        seedLabel: snippet.length > 120 ? snippet.slice(0, 120) + "…" : snippet,
+      });
+      try { window.getSelection().removeAllRanges(); } catch {}
+    };
+    document.body.appendChild(b);
+    explainPill = b;
+  };
+  document.addEventListener("mouseup", () => setTimeout(onSelect, 10));
+  document.addEventListener("touchend", () => setTimeout(onSelect, 10));
+  document.addEventListener("scroll", hideExplainPill, true);
+  document.addEventListener("mousedown", (e) => { if (explainPill && e.target !== explainPill) hideExplainPill(); });
+}
+setupSelectExplain();
 
 async function boot() {
   const s = updateStreak();

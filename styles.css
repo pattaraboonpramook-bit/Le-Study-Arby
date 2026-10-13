@@ -304,12 +304,55 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .fc-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 /* Quiz */
-/* Difficulty control */
+/* Difficulty + count controls */
 .tab-tools { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
 .tt-label { font-size: .8rem; font-weight: 700; color: var(--text-2); }
-.diffbar { display: inline-flex; padding: 3px; gap: 3px; background: var(--surface-2); border-radius: 999px; }
-.diff-opt { padding: 6px 15px; border-radius: 999px; font-weight: 600; font-size: .82rem; color: var(--text-2); transition: .15s; }
-.diff-opt.active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow); }
+.diffbar, .numbar { display: inline-flex; padding: 3px; gap: 3px; background: var(--surface-2); border-radius: 999px; }
+.diff-opt, .num-opt { padding: 6px 15px; border-radius: 999px; font-weight: 600; font-size: .82rem; color: var(--text-2); transition: .15s; }
+.num-opt { padding: 6px 12px; }
+.diff-opt.active, .num-opt.active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow); }
+
+/* Quiz "explain in detail" */
+.q-explain.ok { border-left: 3px solid var(--good); }
+.q-explain.no { border-left: 3px solid var(--bad); }
+.q-why { margin-top: 10px; }
+
+/* Podcast volume + length */
+.pod-vol { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--text-2); }
+.pod-vol input[type="range"] { width: 92px; accent-color: var(--accent); }
+
+/* Explainer overlay (why an answer is right / explain highlighted text) */
+.explainer-card { width: min(620px, 95vw); display: flex; flex-direction: column; }
+.ex-body { flex: 1; overflow-y: auto; max-height: 56vh; display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; padding-right: 4px; }
+.ex-q { align-self: flex-end; max-width: 85%; background: var(--accent); color: var(--accent-ink); padding: 9px 13px; border-radius: 14px 14px 4px 14px; font-size: .9rem; font-weight: 500; }
+.ex-a { align-self: flex-start; max-width: 92%; background: var(--surface-2); border-radius: 14px 14px 14px 4px; padding: 12px 15px; font-size: .92rem; }
+.ex-a .prose { font-size: .92rem; }
+.ex-a .prose :first-child { margin-top: 0; } .ex-a .prose :last-child { margin-bottom: 0; }
+.ex-quick { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+.chip-btn { padding: 7px 13px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; font-size: .82rem; transition: .15s; }
+.chip-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ex-form { display: flex; gap: 8px; }
+.ex-form .input { flex: 1; }
+.spinner-sm { width: 15px; height: 15px; border-width: 2px; }
+
+/* Select-to-explain floating pill */
+.explain-pill { position: fixed; z-index: 1200; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: .82rem; box-shadow: var(--shadow-lg);
+  animation: fade .14s ease; white-space: nowrap; }
+.explain-pill:hover { filter: brightness(1.06); }
+
+/* Combine notes (library multi-select) */
+.note-card.selectable { cursor: pointer; }
+.note-card.selectable { padding-left: 46px; position: relative; }
+.note-card .note-check { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px;
+  border-radius: 7px; border: 2px solid var(--border); display: grid; place-content: center; font-size: .8rem; font-weight: 800;
+  color: var(--accent-ink); background: var(--surface-2); transition: .15s; }
+.note-card.selected { border-color: var(--accent); background: var(--accent-weak); box-shadow: 0 0 0 2px var(--accent-weak); }
+.note-card.selected .note-check { background: var(--accent); border-color: var(--accent); }
+.combine-bar { position: sticky; bottom: 16px; margin-top: 20px; display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 18px; box-shadow: var(--shadow-lg); }
+.combine-bar > span { font-weight: 700; color: var(--text-2); }
 
 .quiz { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
 .q-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
