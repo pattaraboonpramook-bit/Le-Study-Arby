@@ -133,6 +133,12 @@ function canonicalYouTube(url) {
   return id ? `https://www.youtube.com/watch?v=${id}` : s;
 }
 
+function difficultyDirective(task, d) {
+  if (d === "Easy") return `\n\nDIFFICULTY: Make these EASY. Focus on the core definitions and most important basic facts — straightforward recall.${task === "quiz" ? " Keep the wrong options clearly distinguishable from the correct answer." : ""}`;
+  if (d === "Hard") return `\n\nDIFFICULTY: Make these HARD. Test deep understanding, application, nuance, and edge cases rather than simple recall.${task === "quiz" ? " Use plausible, tempting distractors that require careful reasoning to rule out." : " Phrase the fronts so they demand real understanding, not just term-matching."}`;
+  return `\n\nDIFFICULTY: Make these MEDIUM — a balanced mix of straightforward recall and questions that require understanding and connecting ideas.`;
+}
+
 function buildBody(task, payload, cfg) {
   const generationConfig = { maxOutputTokens: cfg.max_tokens, temperature: 0.7 };
   if (cfg.json) generationConfig.responseMimeType = "application/json";
@@ -192,8 +198,12 @@ function buildBody(task, payload, cfg) {
 
   const source = String(payload?.source || "").slice(0, MAX_SOURCE);
   const label = task === "lesson" ? "VIDEO TRANSCRIPT" : "SOURCE MATERIAL";
+  let sys = cfg.system;
+  if ((task === "flashcards" || task === "quiz") && payload?.difficulty) {
+    sys += difficultyDirective(task, payload.difficulty);
+  }
   return {
-    system_instruction: { parts: [{ text: cfg.system }] },
+    system_instruction: { parts: [{ text: sys }] },
     contents: [{ role: "user", parts: [{ text: `${label}:\n\n${source}` }] }],
     generationConfig,
   };

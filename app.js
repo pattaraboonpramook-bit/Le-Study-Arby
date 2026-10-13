@@ -297,6 +297,14 @@ function titleFromMarkdown(md, fallback = "Untitled note") {
 const fmtDate = (d) => new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 const sourceLabel = { record: "Recording", paste: "Pasted", youtube: "YouTube", image: "Photos" };
 
+// Difficulty for flashcards / quizzes (stored per-device).
+const getDifficulty = () => { try { return localStorage.getItem("recall_difficulty") || "Medium"; } catch { return "Medium"; } };
+const setDifficulty = (d) => { try { localStorage.setItem("recall_difficulty", d); } catch {} };
+function difficultyBar() {
+  const cur = getDifficulty();
+  return `<div class="tab-tools"><span class="tt-label">Difficulty</span><div class="diffbar">${["Easy", "Medium", "Hard"].map((d) => `<button class="diff-opt ${d === cur ? "active" : ""}" data-diff="${d}">${d}</button>`).join("")}</div></div>`;
+}
+
 // ── Theme ────────────────────────────────────────────────────────────────────
 function currentTheme() {
   return document.documentElement.dataset.theme ||
@@ -1015,12 +1023,12 @@ async function generateAdvanced() {
 function flashTabHTML() {
   const cards = state.current.flashcards || [];
   if (cards.length === 0) {
-    return genCTA("🎴", "No flashcards yet", "Generate a deck from your notes and start studying.", "gen-fc", "Generate flashcards");
+    return difficultyBar() + genCTA("🎴", "No flashcards yet", "Generate a deck from your notes and start studying.", "gen-fc", "Generate flashcards");
   }
   const order = state.fc.order.length ? state.fc.order : cards.map((_, i) => i);
   const idx = order[state.fc.i];
   const card = cards[idx];
-  return `<div class="panel fc-stage">
+  return difficultyBar() + `<div class="panel fc-stage">
     <div class="fc-progress">Card ${state.fc.i + 1} of ${cards.length}</div>
     <div class="flashcard ${state.fc.flipped ? "flipped" : ""}" id="flashcard">
       <div class="flashcard-inner">
@@ -1037,6 +1045,7 @@ function flashTabHTML() {
   </div>`;
 }
 function wireFlash() {
+  $$(".diff-opt").forEach((b) => (b.onclick = () => { setDifficulty(b.dataset.diff); renderNotePanel(); }));
   const g = $("#gen-fc"); if (g) { g.onclick = () => generateFlashcards(); return; }
   $("#flashcard").onclick = () => { state.fc.flipped = !state.fc.flipped; $("#flashcard").classList.toggle("flipped"); };
   $("#fc-prev").onclick = () => { state.fc.i = (state.fc.i - 1 + state.current.flashcards.length) % state.current.flashcards.length; state.fc.flipped = false; renderNotePanel(); };
@@ -1052,7 +1061,7 @@ async function generateFlashcards() {
   const n = state.current;
   busy(true, "Making flashcards…");
   try {
-    const result = await aiGenerate("flashcards", { source: n.notes_md || n.transcript });
+    const result = await aiGenerate("flashcards", { source: n.notes_md || n.transcript, difficulty: getDifficulty() });
     const cards = (Array.isArray(result) ? result : []).filter((c) => c && c.front && c.back);
     if (!cards.length) throw new Error("No cards were generated. Try again.");
     await patchNote({ flashcards: cards });
@@ -1066,7 +1075,7 @@ async function generateFlashcards() {
 function quizTabHTML() {
   const quiz = state.current.quiz || [];
   if (quiz.length === 0) {
-    return genCTA("❓", "No quiz yet", "Generate a practice quiz from your notes.", "gen-quiz", "Generate quiz");
+    return difficultyBar() + genCTA("❓", "No quiz yet", "Generate a practice quiz from your notes.", "gen-quiz", "Generate quiz");
   }
   const answered = state.quiz.answers;
   const done = Object.keys(answered).length === quiz.length;
@@ -1095,10 +1104,11 @@ function quizTabHTML() {
         <button class="btn btn-primary btn-sm" id="quiz-retake">↻ Retake</button></div>`
     : "";
 
-  return `<div class="panel quiz">${cards}${scoreCard}
+  return difficultyBar() + `<div class="panel quiz">${cards}${scoreCard}
     <div style="text-align:center"><button class="btn btn-outline btn-sm" id="regen-quiz">↻ New quiz</button></div></div>`;
 }
 function wireQuiz() {
+  $$(".diff-opt").forEach((b) => (b.onclick = () => { setDifficulty(b.dataset.diff); renderNotePanel(); }));
   const g = $("#gen-quiz"); if (g) { g.onclick = () => generateQuiz(); return; }
   $$(".q-opt").forEach((b) => (b.onclick = () => {
     const qi = +b.dataset.q;
@@ -1121,7 +1131,7 @@ async function generateQuiz() {
   const n = state.current;
   busy(true, "Writing quiz questions…");
   try {
-    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript });
+    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript, difficulty: getDifficulty() });
     const quiz = (Array.isArray(result) ? result : []).filter(
       (q) => q && q.question && Array.isArray(q.options) && q.options.length >= 2 && Number.isInteger(q.answer));
     if (!quiz.length) throw new Error("No questions were generated. Try again.");
