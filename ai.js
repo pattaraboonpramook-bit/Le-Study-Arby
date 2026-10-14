@@ -301,6 +301,10 @@ async function callOnce(model, body) {
   const e = new Error(mapError(res.status, raw));
   e.status = res.status;
   e.raw = raw;
+  // A per-DAY free-tier quota won't recover in seconds, so flag it to skip the
+  // model immediately (each model has its own daily bucket) rather than retrying.
+  const viol = (data?.error?.details || []).flatMap((d) => d.violations || []);
+  e.perDay = viol.some((v) => /PerDay/i.test(v.quotaId || "")) || /per day|daily limit/i.test(raw);
   throw e;
 }
 
@@ -313,6 +317,7 @@ async function tryModel(model, body, maxAttempts) {
       return await callOnce(model, body);
     } catch (e) {
       lastErr = e;
+      if (e.perDay) throw e;                 // daily cap on this model — retrying won't help
       if (!RETRYABLE.has(e.status)) throw e; // model-unavailable / bad key / safety — caller decides
       if (attempt < maxAttempts - 1) {
         status("Gemini's busy — hang tight, I'm retrying…");
@@ -328,7 +333,7 @@ async function tryModel(model, body, maxAttempts) {
 // path), then fall back through the chain only when it's truly unavailable or
 // stays overloaded. Normal requests see zero added delay — backoff only on failure.
 async function callGemini(body) {
-  let lastErr;
+  let lastErr, anyPerDay = false;
   for (let i = 0; i < MODEL_CHAIN.length; i++) {
     const model = MODEL_CHAIN[i];
     const attempts = i === 0 ? 4 : 2; // give the primary model the most tries
@@ -336,10 +341,16 @@ async function callGemini(body) {
       return await tryModel(model, body, attempts);
     } catch (e) {
       lastErr = e;
+      if (e.perDay) { anyPerDay = true; status("That model's daily limit is used up — trying another…"); continue; }
       if (isModelUnavailable(e.status, e.raw)) continue; // try the next model
       if (RETRYABLE.has(e.status)) continue;             // overload exhausted — fall back
       throw e;                                           // real error (bad key, 400, safety)
     }
+  }
+  if (anyPerDay) {
+    const e = new Error("You've hit today's free Gemini limit on every model (the free tier caps requests per day). It resets within a day — or add your own API key, or turn on billing in Google AI Studio for much higher limits.");
+    e.status = 429;
+    throw e;
   }
   throw lastErr;
 }
