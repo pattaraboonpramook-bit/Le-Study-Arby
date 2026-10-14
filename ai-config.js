@@ -8,7 +8,9 @@
 // Get a free key at: https://aistudio.google.com/apikey  (Create API key)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Primary model. "flash-lite" has the best free-tier availability (the bigger
-// flash models get "high demand" 503s), and it's a stable alias so it won't get
-// retired. ai.js also falls back to other models automatically if this one is busy.
-export const GEMINI_MODEL = "gemini-flash-lite-latest";
+// Primary model. The "…-latest" aliases (flash-latest / flash-lite-latest) are
+// heavily rate-limited on the free tier right now — they frequently return 503
+// "high demand" or stall for 20s+. The concrete "gemini-3.5-flash" version has
+// far more free-tier headroom and responds reliably, so it's the primary.
+// ai.js falls back through a chain (incl. the aliases) automatically if it's busy.
+export const GEMINI_MODEL = "gemini-3.5-flash";

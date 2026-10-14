@@ -60,12 +60,12 @@ Output only the Markdown lesson.`;
 const FLASHCARDS_SYSTEM = `You create study flashcards from the student's material.
 Return ONLY a JSON array of objects shaped exactly:
 {"front": "a specific question or term", "back": "a concise answer or definition"}
-Make 8–15 cards covering the most important, testable ideas. Fronts should be answerable from the material; backs should be short and precise.`;
+Cover the most important, testable ideas. Fronts must be answerable from the material; backs should be short and precise. The exact number of cards and the required difficulty level are specified below — follow them precisely.`;
 
 const QUIZ_SYSTEM = `You create a multiple-choice quiz from the student's material.
 Return ONLY a JSON array of objects shaped exactly:
 {"question": "string", "options": ["a","b","c","d"], "answer": 0, "explanation": "why the correct option is right"}
-Rules: exactly 4 options per question; "answer" is the 0-based index of the correct option; make 5–10 questions that test understanding rather than trivia; base everything on the provided material.`;
+Rules: exactly 4 options per question; "answer" is the 0-based index of the correct option; base every question strictly on the provided material. The exact number of questions and the required difficulty level are specified below — follow them precisely.`;
 
 const CHAT_SYSTEM = `You are a friendly, sharp study tutor. Answer the student's questions using their study notes below as your primary source. Be clear and concise, use short examples where they help, and format with Markdown when useful. If the notes don't cover something, say so briefly and then give your best general explanation. Don't make up specifics that would appear in their course if they aren't in the notes.`;
 
@@ -122,7 +122,9 @@ function endpoint(model) {
 }
 
 // Try the configured model first, then fall back to others if it's overloaded.
-const MODEL_CHAIN = [...new Set([GEMINI_MODEL, "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-flash-latest"])];
+// Order: two reliable concrete models, then the (often-saturated) "latest" aliases
+// as a last resort in case demand shifts.
+const MODEL_CHAIN = [...new Set([GEMINI_MODEL, "gemini-3.5-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest"])];
 
 // Normalize any YouTube URL to the clean form Gemini accepts. Extra params like
 // &t= (timestamp) or &list= (playlist) make Gemini reject the request, and they
@@ -137,10 +139,23 @@ function canonicalYouTube(url) {
   return id ? `https://www.youtube.com/watch?v=${id}` : s;
 }
 
+// Concrete, prescriptive difficulty rubric. This is deliberately strong and
+// specific — vague directives produce levels that all feel the same.
 function difficultyDirective(task, d) {
-  if (d === "Easy") return `\n\nDIFFICULTY: Make these EASY. Focus on the core definitions and most important basic facts — straightforward recall.${task === "quiz" ? " Keep the wrong options clearly distinguishable from the correct answer." : ""}`;
-  if (d === "Hard") return `\n\nDIFFICULTY: Make these HARD. Test deep understanding, application, nuance, and edge cases rather than simple recall.${task === "quiz" ? " Use plausible, tempting distractors that require careful reasoning to rule out." : " Phrase the fronts so they demand real understanding, not just term-matching."}`;
-  return `\n\nDIFFICULTY: Make these MEDIUM — a balanced mix of straightforward recall and questions that require understanding and connecting ideas.`;
+  const quiz = task === "quiz";
+  if (d === "Easy") {
+    return quiz
+      ? `\n\nDIFFICULTY — EASY (this is the single most important constraint). Every question must test simple, direct recall of a fact, definition, or term stated explicitly in the material; the correct answer should be findable almost word-for-word in the source. Use one-step "What is…/Which of these is…" questions. Make the three wrong options clearly and obviously incorrect, so a student who read the material once can rule them out. Do NOT require reasoning, application, or combining ideas.`
+      : `\n\nDIFFICULTY — EASY (this is the single most important constraint). Each card is a basic term-and-definition or a simple fact stated directly in the material (e.g. "What is X?" → a short definition). Keep fronts short and answerable from memory after a single read. No application, no multi-step reasoning.`;
+  }
+  if (d === "Hard") {
+    return quiz
+      ? `\n\nDIFFICULTY — HARD (this is the single most important constraint). Every question must demand real reasoning: applying concepts to new situations, multi-step thinking, analysing subtle distinctions, or spotting edge cases and common misconceptions. The three wrong options must be genuinely tempting traps that reflect typical student mistakes, so only someone with deep understanding can eliminate them. Do NOT ask anything answerable by simple recall or by matching words from the text.`
+      : `\n\nDIFFICULTY — HARD (this is the single most important constraint). Each card must probe deep understanding: explain a mechanism, apply a concept to a scenario, compare/contrast nuanced cases, or reason through "why does X lead to Y". Fronts must demand genuine understanding and synthesis — never simple term-matching or verbatim recall.`;
+  }
+  return quiz
+    ? `\n\nDIFFICULTY — MEDIUM (this is the single most important constraint). Each question should require understanding a concept and applying or connecting it — "why", "how", "what happens if", or relating two ideas — not pure verbatim recall. The wrong options should be plausible but distinguishable by a student who genuinely understands the material. Avoid both word-for-word recall and obscure trick questions.`
+    : `\n\nDIFFICULTY — MEDIUM (this is the single most important constraint). Cards should go beyond definitions to how and why — relationships, causes and effects, comparisons, or short applications. The student should need to understand the concept, not just recognise a term.`;
 }
 
 // How many items to produce (flashcards / quiz questions).
@@ -241,41 +256,89 @@ function mapError(status, msg) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-// Transient statuses worth retrying / falling back on (overload, rate-limit, gateway, network=0).
-const RETRYABLE = new Set([0, 429, 500, 502, 503, 504]);
+// Transient statuses worth retrying (overload, rate-limit, gateway, timeout, network=0).
+const RETRYABLE = new Set([0, 408, 429, 500, 502, 503, 504]);
+// If a single request stalls this long, abort and retry — stops the app hanging.
+const REQ_TIMEOUT_MS = 45_000;
 
-// One model, with a single quick retry on a transient error.
-async function tryModel(model, body) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let res;
-    try {
-      res = await fetch(endpoint(model), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    } catch {
-      const e = new Error("Couldn't reach Google — check your internet connection."); e.status = 0;
-      if (attempt < 1) { await sleep(600); continue; }
-      throw e;
-    }
-    const data = await res.json().catch(() => null);
-    if (res.ok) return data;
-    const e = new Error(mapError(res.status, data?.error?.message || "")); e.status = res.status;
-    if (RETRYABLE.has(res.status) && attempt < 1) { await sleep(800); continue; }
-    throw e;
-  }
+// Optional progress hook so the UI can say "still working, Gemini's busy" instead
+// of looking frozen while we ride out an overload.
+let aiStatusCb = null;
+export function onAiStatus(cb) { aiStatusCb = typeof cb === "function" ? cb : null; }
+function status(msg) { try { aiStatusCb && aiStatusCb(msg); } catch {} }
+
+// A model the current key can't use (retired/renamed) — skip to the next one
+// rather than failing the whole request.
+function isModelUnavailable(status, msg) {
+  return status === 404 || /not found|not available|does not exist|is not supported|unsupported/i.test(msg || "");
 }
 
-// Call Gemini, automatically falling back through MODEL_CHAIN when a model is busy.
-async function callGemini(body) {
+// A single request to one model, with a hard timeout.
+async function callOnce(model, body) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQ_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(endpoint(model), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } catch (err) {
+    const timedOut = err && err.name === "AbortError";
+    const e = new Error(timedOut
+      ? "Gemini is slow right now — retrying…"
+      : "Couldn't reach Google — check your internet connection.");
+    e.status = 0;
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+  const data = await res.json().catch(() => null);
+  if (res.ok) return data;
+  const raw = data?.error?.message || "";
+  const e = new Error(mapError(res.status, raw));
+  e.status = res.status;
+  e.raw = raw;
+  throw e;
+}
+
+// One model, retrying transient failures with exponential backoff + jitter.
+// Overload on the free tier is usually brief, so riding it out beats failing.
+async function tryModel(model, body, maxAttempts) {
   let lastErr;
-  for (const model of MODEL_CHAIN) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return await tryModel(model, body);
+      return await callOnce(model, body);
     } catch (e) {
       lastErr = e;
-      if (!RETRYABLE.has(e.status)) throw e; // real error (bad key, 400, safety) — stop
+      if (!RETRYABLE.has(e.status)) throw e; // model-unavailable / bad key / safety — caller decides
+      if (attempt < maxAttempts - 1) {
+        status("Gemini's busy — hang tight, I'm retrying…");
+        const backoff = Math.min(6000, 700 * 2 ** attempt) + Math.random() * 400;
+        await sleep(backoff);
+      }
+    }
+  }
+  throw lastErr;
+}
+
+// Call Gemini: hammer the fast, most-available model first (it's the quickest
+// path), then fall back through the chain only when it's truly unavailable or
+// stays overloaded. Normal requests see zero added delay — backoff only on failure.
+async function callGemini(body) {
+  let lastErr;
+  for (let i = 0; i < MODEL_CHAIN.length; i++) {
+    const model = MODEL_CHAIN[i];
+    const attempts = i === 0 ? 4 : 2; // give the primary model the most tries
+    try {
+      return await tryModel(model, body, attempts);
+    } catch (e) {
+      lastErr = e;
+      if (isModelUnavailable(e.status, e.raw)) continue; // try the next model
+      if (RETRYABLE.has(e.status)) continue;             // overload exhausted — fall back
+      throw e;                                           // real error (bad key, 400, safety)
     }
   }
   throw lastErr;

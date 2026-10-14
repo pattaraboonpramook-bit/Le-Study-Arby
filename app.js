@@ -7,7 +7,7 @@ import {
   listNotes, getNote, createNote, updateNote, deleteNote,
   listChat, addChat,
 } from "./store.js";
-import { generate, hasGeminiKey, getGeminiKey, setGeminiKey, getLang, setLang } from "./ai.js";
+import { generate, hasGeminiKey, getGeminiKey, setGeminiKey, getLang, setLang, onAiStatus } from "./ai.js";
 
 // Output languages: value is the name used in the AI prompt; label is the native name.
 const LANGS = [
@@ -101,9 +101,11 @@ const BUSY_PHRASES = [
   "Turning chaos into notes…",
 ];
 let busyTimer = null;
+let busyNote = ""; // sticky status (e.g. "retrying…") that overrides the fun phrases
 function busy(on, label = "Working…") {
   let o = document.getElementById("overlay");
   if (on) {
+    busyNote = "";
     if (!o) {
       o = document.createElement("div");
       o.id = "overlay";
@@ -114,13 +116,20 @@ function busy(on, label = "Working…") {
     clearInterval(busyTimer);
     busyTimer = setInterval(() => {
       const p = $("#busy-label");
-      if (p) p.textContent = BUSY_PHRASES[Math.floor(Math.random() * BUSY_PHRASES.length)];
+      if (p) p.textContent = busyNote || BUSY_PHRASES[Math.floor(Math.random() * BUSY_PHRASES.length)];
     }, 2200);
   } else if (o) {
     clearInterval(busyTimer); busyTimer = null;
+    busyNote = "";
     o.remove();
   }
 }
+// When the AI layer is retrying through an overload, say so instead of looking frozen.
+onAiStatus((msg) => {
+  busyNote = msg || "";
+  const p = $("#busy-label");
+  if (p && msg) p.textContent = msg;
+});
 
 const PRAISE = ["Notes ready ✨", "Boom — done 💥", "Served fresh 🍽️", "Go ace it 💪", "Nailed it 🎯"];
 const praise = () => PRAISE[Math.floor(Math.random() * PRAISE.length)];
