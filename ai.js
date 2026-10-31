@@ -258,8 +258,17 @@ function mapError(status, msg) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Transient statuses worth retrying (overload, rate-limit, gateway, timeout, network=0).
 const RETRYABLE = new Set([0, 408, 429, 500, 502, 503, 504]);
-// If a single request stalls this long, abort and retry — stops the app hanging.
-const REQ_TIMEOUT_MS = 45_000;
+
+// Per-task call tuning. Text tasks should fail fast (45s) so a stalled request
+// doesn't freeze the app. But "video" means Gemini actually WATCHES a YouTube
+// video, which legitimately takes much longer — a short timeout there would
+// abort valid work and retry forever, so it gets a long timeout and few retries.
+function tuneCall(task) {
+  if (task === "video") {
+    return { timeoutMs: 180_000, attemptsPrimary: 1, attemptsFallback: 1, maxModels: 3 };
+  }
+  return { timeoutMs: 45_000, attemptsPrimary: 4, attemptsFallback: 2, maxModels: MODEL_CHAIN.length };
+}
 
 // Optional progress hook so the UI can say "still working, Gemini's busy" instead
 // of looking frozen while we ride out an overload.
@@ -274,9 +283,9 @@ function isModelUnavailable(status, msg) {
 }
 
 // A single request to one model, with a hard timeout.
-async function callOnce(model, body) {
+async function callOnce(model, body, timeoutMs) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), REQ_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let res;
   try {
     res = await fetch(endpoint(model), {
@@ -310,11 +319,11 @@ async function callOnce(model, body) {
 
 // One model, retrying transient failures with exponential backoff + jitter.
 // Overload on the free tier is usually brief, so riding it out beats failing.
-async function tryModel(model, body, maxAttempts) {
+async function tryModel(model, body, maxAttempts, timeoutMs) {
   let lastErr;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return await callOnce(model, body);
+      return await callOnce(model, body, timeoutMs);
     } catch (e) {
       lastErr = e;
       if (e.perDay) throw e;                 // daily cap on this model — retrying won't help
@@ -332,15 +341,18 @@ async function tryModel(model, body, maxAttempts) {
 // Call Gemini: hammer the fast, most-available model first (it's the quickest
 // path), then fall back through the chain only when it's truly unavailable or
 // stays overloaded. Normal requests see zero added delay — backoff only on failure.
-async function callGemini(body) {
-  let lastErr, anyPerDay = false;
-  for (let i = 0; i < MODEL_CHAIN.length; i++) {
+async function callGemini(body, tuning) {
+  const t = tuning || tuneCall();
+  const nModels = Math.min(t.maxModels, MODEL_CHAIN.length);
+  let lastErr, anyPerDay = false, anyTimeout = false;
+  for (let i = 0; i < nModels; i++) {
     const model = MODEL_CHAIN[i];
-    const attempts = i === 0 ? 4 : 2; // give the primary model the most tries
+    const attempts = i === 0 ? t.attemptsPrimary : t.attemptsFallback;
     try {
-      return await tryModel(model, body, attempts);
+      return await tryModel(model, body, attempts, t.timeoutMs);
     } catch (e) {
       lastErr = e;
+      if (e.status === 0 && /slow/i.test(e.message)) anyTimeout = true;
       if (e.perDay) { anyPerDay = true; status("That model's daily limit is used up — trying another…"); continue; }
       if (isModelUnavailable(e.status, e.raw)) continue; // try the next model
       if (RETRYABLE.has(e.status)) continue;             // overload exhausted — fall back
@@ -350,6 +362,11 @@ async function callGemini(body) {
   if (anyPerDay) {
     const e = new Error("You've hit today's free Gemini limit on every model (the free tier caps requests per day). It resets within a day — or add your own API key, or turn on billing in Google AI Studio for much higher limits.");
     e.status = 429;
+    throw e;
+  }
+  if (anyTimeout) {
+    const e = new Error("That took too long to process. If it's a long YouTube video, paste its transcript instead (the box under the link) — it's much faster and handles long videos.");
+    e.status = 0;
     throw e;
   }
   throw lastErr;
@@ -378,7 +395,7 @@ export async function generate(task, payload) {
 
   const body = buildBody(task, payload, cfg);
   if (task !== "translate") applyLanguage(body); // translate carries its own target language
-  const data = await callGemini(body);
+  const data = await callGemini(body, tuneCall(task));
   const text = textFrom(data);
 
   if (cfg.json) {

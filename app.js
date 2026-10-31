@@ -124,12 +124,14 @@ function busy(on, label = "Working…") {
     o.remove();
   }
 }
-// When the AI layer is retrying through an overload, say so instead of looking frozen.
-onAiStatus((msg) => {
+// Pin a steady status line in the loading overlay (overrides the fun phrases).
+function busyNoteSet(msg) {
   busyNote = msg || "";
   const p = $("#busy-label");
   if (p && msg) p.textContent = msg;
-});
+}
+// When the AI layer is retrying through an overload, say so instead of looking frozen.
+onAiStatus(busyNoteSet);
 
 const PRAISE = ["Notes ready ✨", "Boom — done 💥", "Served fresh 🍽️", "Go ace it 💪", "Nailed it 🎯"];
 const praise = () => PRAISE[Math.floor(Math.random() * PRAISE.length)];
@@ -713,10 +715,10 @@ function captureHTML() {
   } else if (mode === "youtube") {
     body = `<label class="field-label" style="display:block;margin-bottom:6px">YouTube link</label>
       <input class="input" id="yt-url" placeholder="https://www.youtube.com/watch?v=…" value="${escapeHtml(state.sourceRef || "")}" />
-      <p style="color:var(--muted);margin:10px 0 4px;font-size:.9rem">Paste the link and press <strong>Make lesson</strong> — Recall watches the video for you. <strong>No transcript needed.</strong></p>
+      <p style="color:var(--muted);margin:10px 0 4px;font-size:.9rem">Paste the link and press <strong>Make lesson</strong> — Recall watches the video for you (no transcript needed). Best for clips under ~30&nbsp;min; watching a long video can take a minute or two.</p>
       <details class="yt-fallback" ${state.ytManual ? "open" : ""}>
-        <summary>Very long video or no captions? Paste a transcript instead</summary>
-        <textarea class="input" id="yt-manual" style="min-height:150px;margin-top:10px" placeholder="Optional — video ⋯ → Show transcript → copy → paste here">${escapeHtml(state.ytManual || "")}</textarea>
+        <summary>⚡ Faster for long videos — paste the transcript instead</summary>
+        <textarea class="input" id="yt-manual" style="min-height:150px;margin-top:10px" placeholder="YouTube: ⋯ (or “Show transcript”) → select all → copy → paste here. This skips the slow video-watching step.">${escapeHtml(state.ytManual || "")}</textarea>
       </details>`;
   } else {
     const thumbs = state.images.map((im, i) =>
@@ -872,6 +874,9 @@ async function runTurbo() {
   }
 
   busy(true, busyLabel);
+  // Watching a video genuinely takes a while — keep a steady, honest message up
+  // (with the faster alternative) instead of cycling the quick-task phrases.
+  if (task === "video") busyNoteSet("Watching the video — this can take a minute or two for longer clips. Tip: pasting the transcript is much faster.");
   try {
     const notes_md = await aiGenerate(task, payload);
     const note = await createNote({
