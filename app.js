@@ -62,6 +62,8 @@ const state = {
   authMode: "signin",
   selectMode: false,        // library multi-select (for combining notes)
   selected: new Set(),      // ids picked while in select mode
+  subjectFilter: "",        // library filter: "" = all, "__none__" = unlabelled, else a subject
+  notesEditing: false,      // notes tab: hand-edit mode
 };
 
 let dictation = null;       // speech-to-text for teach-back (separate from capture)
@@ -247,15 +249,53 @@ function openStats() {
 }
 
 // Ask for the Gemini key (saved in this browser only). Returns true if we have one.
+// Friendly, guided key setup (replaces a bare prompt()). Resolves true once a
+// key is saved. Walks the student through getting their own free key.
+function keyWizard(prefill = "") {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "stats-overlay";
+    o.innerHTML = `<div class="stats-card key-wizard" style="max-width:480px">
+      <button class="stats-close" id="kw-close" aria-label="Close">✕</button>
+      <h3 class="stats-h" style="margin-bottom:6px">Turn on AI ✨</h3>
+      <p style="color:var(--text-2);font-size:.92rem;margin-bottom:16px">Recall runs on Google's <strong>free</strong> Gemini AI. It takes about a minute to connect your own free key — then notes, flashcards, quizzes and the rest all work on this device.</p>
+      <ol class="kw-steps">
+        <li><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Open Google AI Studio ↗</a> &nbsp;(sign in with any Google account)</li>
+        <li>Click <strong>Create API key</strong> and copy it</li>
+        <li>Paste it below and save</li>
+      </ol>
+      <input class="input" id="kw-input" placeholder="Paste your key here (starts with AI…)" autocomplete="off" spellcheck="false" value="${escapeHtml(prefill)}" />
+      <div id="kw-err" class="kw-err"></div>
+      <div class="kw-actions">
+        ${prefill ? `<button class="btn btn-ghost" id="kw-remove">Remove key</button>` : ""}
+        <button class="btn btn-primary" id="kw-save">Save &amp; turn on AI</button>
+      </div>
+      <p class="kw-foot">🔒 Your key is stored only in this browser — never uploaded or shared. The free tier has a daily limit that resets each day.</p>
+    </div>`;
+    document.body.appendChild(o);
+    const input = $("#kw-input");
+    const err = $("#kw-err");
+    const done = (ok) => { o.remove(); resolve(ok); };
+    $("#kw-close").onclick = () => done(hasGeminiKey());
+    o.addEventListener("click", (e) => { if (e.target === o) done(hasGeminiKey()); });
+    const save = () => {
+      const k = (input.value || "").trim();
+      if (k.length < 20) { err.textContent = "That key looks too short — copy the whole thing from AI Studio."; input.focus(); return; }
+      setGeminiKey(k);
+      toast("AI is on — key saved on this device ✓", "success");
+      done(true);
+    };
+    $("#kw-save").onclick = save;
+    const rm = $("#kw-remove");
+    if (rm) rm.onclick = () => { setGeminiKey(""); toast("Key removed", "success"); done(false); };
+    input.onkeydown = (e) => { if (e.key === "Enter") save(); };
+    setTimeout(() => input.focus(), 50);
+  });
+}
+
 async function ensureKey() {
   if (hasGeminiKey()) return true;
-  const k = window.prompt(
-    "Paste your free Gemini API key to enable AI.\nGet one at aistudio.google.com/apikey — it's saved only in this browser.",
-    ""
-  );
-  if (k && k.trim().length > 20) { setGeminiKey(k.trim()); toast("Key saved on this device ✓", "success"); return true; }
-  if (k !== null) toast("That doesn't look like a valid key.", "error");
-  return false;
+  return keyWizard("");
 }
 
 // Run an AI task, prompting for the key first if it's missing.
@@ -321,6 +361,50 @@ const getPodMinutes = () => { try { const v = parseInt(localStorage.getItem("rec
 const setPodMinutes = (n) => { try { localStorage.setItem("recall_pod_minutes", String(n)); } catch {} };
 const getPodVolume = () => { try { const v = parseInt(localStorage.getItem("recall_pod_volume"), 10); return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) / 100 : 1; } catch { return 1; } };
 const setPodVolume = (v01) => { try { localStorage.setItem("recall_pod_volume", String(Math.round(v01 * 100))); } catch {} };
+
+// Flashcard spaced-repetition levels, per note: { [cardIndex]: level 0..5 }.
+// Higher = better known. Weak cards (low level) are studied first. Per-device.
+const getSRS = (id) => { try { return JSON.parse(localStorage.getItem("recall_srs_" + id) || "{}") || {}; } catch { return {}; } };
+const setSRS = (id, map) => { try { localStorage.setItem("recall_srs_" + id, JSON.stringify(map)); } catch {} };
+const SRS_MASTERED = 3; // level at/above which a card counts as "mastered"
+// Order card indices weakest-first so review targets what you don't know yet.
+function srsOrder(id, cards) {
+  const srs = getSRS(id);
+  return cards.map((_, i) => i).sort((a, b) => (srs[a] || 0) - (srs[b] || 0));
+}
+
+// Quiz attempt history, per note: [{ at, score, total }]. Per-device.
+const getQuizHist = (id) => { try { return JSON.parse(localStorage.getItem("recall_quizhist_" + id) || "[]") || []; } catch { return []; } };
+function pushQuizHist(id, score, total) {
+  try {
+    const h = getQuizHist(id);
+    h.push({ at: new Date().toISOString(), score, total });
+    localStorage.setItem("recall_quizhist_" + id, JSON.stringify(h.slice(-50)));
+  } catch {}
+}
+
+// Per-note subject/folder (a simple label), stored per-device as { [id]: "Subject" }.
+const getSubjects = () => { try { return JSON.parse(localStorage.getItem("recall_subjects") || "{}") || {}; } catch { return {}; } };
+const getSubject = (id) => getSubjects()[id] || "";
+const setSubject = (id, s) => {
+  try {
+    const m = getSubjects();
+    if (s && s.trim()) m[id] = s.trim().slice(0, 40); else delete m[id];
+    localStorage.setItem("recall_subjects", JSON.stringify(m));
+  } catch {}
+};
+
+// Download a text file (used for Markdown export).
+function downloadText(text, filename, type = "text/markdown") {
+  const blob = new Blob([text], { type: `${type};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+// A filesystem-safe version of a note title.
+const safeName = (s) => (s || "note").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "note";
 
 // Study-tools bar (difficulty + how many) for the Flashcards / Quiz tabs.
 function toolsBar(kind) {
@@ -492,11 +576,7 @@ function wireTopbar() {
         ? `<button id="menu-clear" class="btn-danger">🗑 Clear local data</button>`
         : `<button id="menu-signout" class="btn-danger">⎋ Sign out</button>`);
     avatar.parentElement.appendChild(menu);
-    $("#menu-key").onclick = () => {
-      menu.remove();
-      const k = window.prompt("Paste your Gemini API key (from aistudio.google.com/apikey).\nSaved only in this browser.", getGeminiKey());
-      if (k !== null) { setGeminiKey(k); toast(k.trim().length > 20 ? "Key saved ✓" : "Key cleared", "success"); }
-    };
+    $("#menu-key").onclick = () => { menu.remove(); keyWizard(getGeminiKey()); };
     const langSel = $("#menu-lang-select");
     if (langSel) langSel.onchange = () => {
       setLang(langSel.value);
@@ -545,9 +625,6 @@ function libraryHTML() {
 
   if (state.notes === null) return head + `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`;
 
-  const filtered = state.notes.filter((n) =>
-    !state.search || n.title.toLowerCase().includes(state.search.toLowerCase()));
-
   if (state.notes.length === 0) {
     return head + `<div class="empty">
       <div class="big">✨</div><h3>A blank slate — let's change that</h3>
@@ -555,15 +632,39 @@ function libraryHTML() {
       <button class="btn btn-primary" id="new-note-2" style="margin-top:16px">Make your first note</button>
     </div>`;
   }
-  if (filtered.length === 0) return head + `<div class="empty"><p>No notes match “${escapeHtml(state.search)}”.</p></div>`;
 
   const sel = state.selectMode;
+  const subjectsMap = getSubjects();
+  const present = [...new Set(state.notes.map((n) => subjectsMap[n.id]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const anyNoSubject = state.notes.some((n) => !subjectsMap[n.id]);
+  const chipsBar = (!sel && present.length)
+    ? `<div class="subject-bar">
+        <button class="subj-opt ${!state.subjectFilter ? "active" : ""}" data-subj="">All</button>
+        ${present.map((s) => `<button class="subj-opt ${state.subjectFilter === s ? "active" : ""}" data-subj="${escapeHtml(s)}">🏷 ${escapeHtml(s)}</button>`).join("")}
+        ${anyNoSubject ? `<button class="subj-opt ${state.subjectFilter === "__none__" ? "active" : ""}" data-subj="__none__">No subject</button>` : ""}
+      </div>`
+    : "";
+
+  const filtered = state.notes.filter((n) => {
+    if (state.search && !n.title.toLowerCase().includes(state.search.toLowerCase())) return false;
+    if (state.subjectFilter) {
+      const s = subjectsMap[n.id] || "";
+      if (state.subjectFilter === "__none__") return !s;
+      return s === state.subjectFilter;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) return head + chipsBar + `<div class="empty"><p>No notes here${state.search ? ` matching “${escapeHtml(state.search)}”` : ""}.</p></div>`;
+
   const cards = filtered.map((n) => {
     const on = state.selected.has(n.id);
+    const subj = subjectsMap[n.id];
     return `<button class="note-card ${sel ? "selectable" : ""} ${on ? "selected" : ""}" data-id="${n.id}">
       ${sel ? `<span class="note-check">${on ? "✓" : ""}</span>` : ""}
       <h3>${escapeHtml(n.title)}</h3>
       <div class="meta">
+        ${subj ? `<span class="pill subject">🏷 ${escapeHtml(subj)}</span>` : ""}
         <span class="pill ${n.source_type}">${sourceLabel[n.source_type] || n.source_type}</span>
         <span>${fmtDate(n.updated_at)}</span>
       </div>
@@ -575,7 +676,7 @@ function libraryHTML() {
         <button class="btn btn-primary" id="combine-go"${state.selected.size < 2 ? " disabled" : ""}>⛓ Combine ${state.selected.size >= 2 ? state.selected.size + " notes" : "notes"}</button>
        </div>`
     : "";
-  return head + `<div class="note-grid">${cards}</div>` + bar;
+  return head + chipsBar + `<div class="note-grid">${cards}</div>` + bar;
 }
 
 function wireLibrary() {
@@ -584,6 +685,7 @@ function wireLibrary() {
   const cs = $("#combine-start"); if (cs) cs.onclick = () => { state.selectMode = true; state.selected = new Set(); renderView(); };
   const cc = $("#combine-cancel"); if (cc) cc.onclick = exitSelectMode;
   const cg = $("#combine-go"); if (cg) cg.onclick = combineSelected;
+  $$(".subj-opt").forEach((b) => (b.onclick = () => { state.subjectFilter = b.dataset.subj; renderView(); }));
   const s = $("#search");
   if (s) s.oninput = () => {
     state.search = s.value;
@@ -918,7 +1020,8 @@ function openNoteObject(note) {
   state.current = note;
   state.view = "note";
   state.noteTab = "notes";
-  state.fc = { order: (note.flashcards || []).map((_, i) => i), i: 0, flipped: false };
+  state.notesEditing = false;
+  state.fc = { order: srsOrder(note.id, note.flashcards || []), i: 0, flipped: false };
   state.quiz = { answers: {} };
   state.chat = null;
   state.feynman = null;
@@ -946,6 +1049,7 @@ function noteHTML() {
       <span class="pill ${n.source_type}">${sourceLabel[n.source_type] || n.source_type}</span>
       <span>${fmtDate(n.updated_at)}</span>
       ${n.source_ref ? `· <a href="${escapeHtml(n.source_ref)}" target="_blank" rel="noopener">source</a>` : ""}
+      <button class="subject-chip" id="note-subject">🏷 ${getSubject(n.id) ? escapeHtml(getSubject(n.id)) : "Add subject"}</button>
     </div>
     <div class="tabs">${tabs}</div>
     <div id="note-panel"></div>
@@ -956,7 +1060,16 @@ function wireNote() {
   $("#back").onclick = goLibrary;
   $("#rename").onclick = renameNote;
   $("#delete").onclick = removeNote;
-  $$(".tabs button").forEach((b) => (b.onclick = () => { state.noteTab = b.dataset.tab; renderNotePanel(); syncTabActive(); }));
+  const sub = $("#note-subject");
+  if (sub) sub.onclick = () => {
+    const cur = getSubject(state.current.id);
+    const v = window.prompt("Subject / folder for this note (leave blank to clear):", cur);
+    if (v === null) return;
+    setSubject(state.current.id, v);
+    sub.textContent = "🏷 " + (getSubject(state.current.id) || "Add subject");
+    toast(v.trim() ? "Subject set ✓" : "Subject cleared", "success");
+  };
+  $$(".tabs button").forEach((b) => (b.onclick = () => { state.noteTab = b.dataset.tab; state.notesEditing = false; renderNotePanel(); syncTabActive(); }));
   renderNotePanel();
 }
 
@@ -987,16 +1100,72 @@ function notesTabHTML() {
   if (!n.notes_md) {
     return genCTA("✎", "No notes yet", "Generate clean study notes from the captured material.", "gen-notes", "Generate notes");
   }
+  if (state.notesEditing) {
+    return `<div class="panel"><textarea class="input notes-editor" id="notes-editor" spellcheck="true">${escapeHtml(n.notes_md)}</textarea>
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" id="notes-save">✓ Save</button>
+        <button class="btn btn-ghost btn-sm" id="notes-cancel">Cancel</button>
+        <span class="notes-edithint">Markdown: # Heading · - bullet · **bold**</span>
+      </div></div>`;
+  }
   return `<div class="panel"><div class="prose">${mdToHtml(n.notes_md)}</div>
     <div style="margin-top:24px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" id="edit-notes">✎ Edit</button>
       <button class="btn btn-outline btn-sm" id="regen-notes">↻ Regenerate</button>
       <button class="btn btn-outline btn-sm" id="translate-notes">🌐 Translate</button>
+      <button class="btn btn-outline btn-sm" id="export-notes">⬇ Markdown</button>
+      <button class="btn btn-outline btn-sm" id="print-notes">🖨 Print / PDF</button>
     </div></div>`;
 }
 function wireNotesTab() {
   const g = $("#gen-notes"); if (g) g.onclick = () => generateNotes();
   const r = $("#regen-notes"); if (r) r.onclick = () => generateNotes();
   const t = $("#translate-notes"); if (t) t.onclick = translateNote;
+  const e = $("#edit-notes"); if (e) e.onclick = () => { state.notesEditing = true; renderNotePanel(); };
+  const ex = $("#export-notes"); if (ex) ex.onclick = exportNoteMarkdown;
+  const pr = $("#print-notes"); if (pr) pr.onclick = printNote;
+  const sv = $("#notes-save"); if (sv) sv.onclick = saveEditedNotes;
+  const cx = $("#notes-cancel"); if (cx) cx.onclick = () => { state.notesEditing = false; renderNotePanel(); };
+}
+
+async function saveEditedNotes() {
+  const ta = $("#notes-editor");
+  if (!ta) return;
+  const md = ta.value.trim();
+  if (!md) { toast("Notes can't be empty.", "error"); return; }
+  busy(true, "Saving…");
+  try {
+    await patchNote({ notes_md: md, title: titleFromMarkdown(md, state.current.title) });
+    state.notesEditing = false;
+    renderNotePanel();
+    const tt = $("#note-title"); if (tt) tt.textContent = state.current.title;
+    toast("Saved ✓", "success");
+  } catch (err) { toast(err.message, "error"); } finally { busy(false); }
+}
+
+// Export / print the current note's Markdown.
+function exportNoteMarkdown() {
+  const n = state.current;
+  const md = n.notes_md || n.transcript || "";
+  if (!md.trim()) { toast("Nothing to export yet.", "error"); return; }
+  downloadText(md, `${safeName(n.title)}.md`);
+  toast("Markdown downloaded ✓", "success");
+}
+function printNote() {
+  const n = state.current;
+  const md = n.notes_md || "";
+  if (!md.trim()) { toast("Nothing to print yet.", "error"); return; }
+  const w = window.open("", "_blank");
+  if (!w) { toast("Allow pop-ups to print.", "error"); return; }
+  const css = `body{font:16px/1.6 Georgia,'Times New Roman',serif;max-width:720px;margin:40px auto;padding:0 24px;color:#111}
+    h1{font-size:1.8rem;margin:0 0 .4em} h2{font-size:1.3rem;margin:1.4em 0 .3em;border-bottom:1px solid #ddd;padding-bottom:.2em}
+    h3{font-size:1.1rem} code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:.9em}
+    blockquote{border-left:3px solid #ccc;margin:1em 0;padding-left:1em;color:#555} ul,ol{padding-left:1.4em} a{color:#1a5fb4}
+    @media print{a[href]:after{content:""}}`;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(n.title)}</title><style>${css}</style></head><body>${mdToHtml(md)}</body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { try { w.print(); } catch {} }, 350);
 }
 
 // Pop a language chooser overlay; calls onPick(languageValue) when one is chosen.
@@ -1202,12 +1371,23 @@ function flashTabHTML() {
   const order = state.fc.order.length ? state.fc.order : cards.map((_, i) => i);
   const idx = order[state.fc.i];
   const card = cards[idx];
-  return toolsBar("flashcards") + `<div class="panel fc-stage">
-    <div class="fc-progress">Card ${state.fc.i + 1} of ${cards.length}</div>
+  const srs = getSRS(state.current.id);
+  const mastered = cards.reduce((m, _, i) => m + ((srs[i] || 0) >= SRS_MASTERED ? 1 : 0), 0);
+  return toolsBar("flashcards") + `<div class="panel fc-stage${state.fc.flipped ? " flipped" : ""}">
+    <div class="fc-progress">Card ${state.fc.i + 1} of ${cards.length} · <span class="fc-mastered">Mastered ${mastered}/${cards.length}</span></div>
     <div class="flashcard ${state.fc.flipped ? "flipped" : ""}" id="flashcard">
       <div class="flashcard-inner">
         <div class="fc-face fc-front"><div><div class="kicker">Question</div><div class="body">${escapeHtml(card.front)}</div></div></div>
         <div class="fc-face fc-back"><div><div class="kicker">Answer</div><div class="body">${escapeHtml(card.back)}</div></div></div>
+      </div>
+    </div>
+    <div class="fc-hint">Tap the card to reveal the answer</div>
+    <div class="fc-rate">
+      <span class="fc-rate-label">How well did you know it?</span>
+      <div class="fc-rate-btns">
+        <button class="fc-rate-btn again" data-rate="again">Again</button>
+        <button class="fc-rate-btn good" data-rate="good">Good</button>
+        <button class="fc-rate-btn easy" data-rate="easy">Easy</button>
       </div>
     </div>
     <div class="fc-nav">
@@ -1215,14 +1395,22 @@ function flashTabHTML() {
       <button class="btn btn-outline btn-sm" id="fc-shuffle">⤮ Shuffle</button>
       <button class="btn btn-ghost btn-sm" id="fc-next">Next →</button>
     </div>
-    <div style="text-align:center;margin-top:18px"><button class="btn btn-outline btn-sm" id="regen-fc">↻ Regenerate deck</button></div>
+    <div style="text-align:center;margin-top:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" id="regen-fc">↻ Regenerate deck</button>
+      <button class="btn btn-ghost btn-sm" id="reset-fc">Reset progress</button>
+    </div>
   </div>`;
 }
 function wireFlash() {
   $$(".diff-opt").forEach((b) => (b.onclick = () => { setDifficulty(b.dataset.diff); renderNotePanel(); }));
   $$(".num-opt").forEach((b) => (b.onclick = () => { setCount(b.dataset.kind, +b.dataset.count); renderNotePanel(); }));
   const g = $("#gen-fc"); if (g) { g.onclick = () => generateFlashcards(); return; }
-  $("#flashcard").onclick = () => { state.fc.flipped = !state.fc.flipped; $("#flashcard").classList.toggle("flipped"); };
+  $("#flashcard").onclick = () => {
+    state.fc.flipped = !state.fc.flipped;
+    $("#flashcard").classList.toggle("flipped");
+    const stage = $(".fc-stage"); if (stage) stage.classList.toggle("flipped");
+  };
+  $$(".fc-rate-btn").forEach((b) => (b.onclick = (ev) => { ev.stopPropagation(); rateCard(b.dataset.rate); }));
   $("#fc-prev").onclick = () => { state.fc.i = (state.fc.i - 1 + state.current.flashcards.length) % state.current.flashcards.length; state.fc.flipped = false; renderNotePanel(); };
   $("#fc-next").onclick = () => { state.fc.i = (state.fc.i + 1) % state.current.flashcards.length; state.fc.flipped = false; renderNotePanel(); };
   $("#fc-shuffle").onclick = () => {
@@ -1231,6 +1419,30 @@ function wireFlash() {
     state.fc = { order: o, i: 0, flipped: false }; renderNotePanel();
   };
   $("#regen-fc").onclick = () => generateFlashcards();
+  const rp = $("#reset-fc"); if (rp) rp.onclick = () => {
+    if (!window.confirm("Reset your mastery progress for this deck?")) return;
+    setSRS(state.current.id, {});
+    state.fc = { order: srsOrder(state.current.id, state.current.flashcards || []), i: 0, flipped: false };
+    renderNotePanel();
+  };
+}
+// Rate the current card (spaced repetition): raises/lowers its mastery level,
+// persists it, and moves on. Weak cards float to the front next session.
+function rateCard(rate) {
+  const n = state.current;
+  const cards = n.flashcards || [];
+  if (!cards.length) return;
+  const order = state.fc.order.length ? state.fc.order : cards.map((_, i) => i);
+  const idx = order[state.fc.i];
+  const srs = getSRS(n.id);
+  const cur = srs[idx] || 0;
+  const next = rate === "again" ? 0 : rate === "easy" ? Math.min(5, cur + 2) : Math.min(5, cur + 1);
+  srs[idx] = next;
+  setSRS(n.id, srs);
+  if (cur < SRS_MASTERED && next >= SRS_MASTERED) award(2); // first time this card is mastered
+  state.fc.i = (state.fc.i + 1) % cards.length;
+  state.fc.flipped = false;
+  renderNotePanel();
 }
 async function generateFlashcards() {
   const n = state.current;
@@ -1240,6 +1452,7 @@ async function generateFlashcards() {
     const cards = (Array.isArray(result) ? result : []).filter((c) => c && c.front && c.back);
     if (!cards.length) throw new Error("No cards were generated. Try again.");
     await patchNote({ flashcards: cards });
+    setSRS(n.id, {}); // fresh deck — reset mastery
     state.fc = { order: cards.map((_, i) => i), i: 0, flipped: false };
     renderNotePanel();
     award(6); markTool("flashcards");
@@ -1282,8 +1495,16 @@ function quizTabHTML() {
         <button class="btn btn-primary btn-sm" id="quiz-retake">↻ Retake</button></div>`
     : "";
 
-  return toolsBar("quiz") + `<div class="panel quiz">${cards}${scoreCard}
+  return toolsBar("quiz") + `<div class="panel quiz">${quizHistLine(state.current.id)}${cards}${scoreCard}
     <div style="text-align:center"><button class="btn btn-outline btn-sm" id="regen-quiz">↻ New quiz</button></div></div>`;
+}
+// A compact history strip of past attempts on this quiz (persisted per device).
+function quizHistLine(id) {
+  const h = getQuizHist(id);
+  if (!h.length) return "";
+  const best = h.reduce((b, a) => (a.total && a.score / a.total >= (b.total ? b.score / b.total : -1)) ? a : b, h[0]);
+  const chips = h.slice(-6).map((a) => `<span class="qh-chip">${a.score}/${a.total}</span>`).join("");
+  return `<div class="quiz-hist"><span class="qh-label">Best ${best.score}/${best.total} · ${h.length} attempt${h.length === 1 ? "" : "s"}</span><div class="qh-chips">${chips}</div></div>`;
 }
 function wireQuiz() {
   $$(".diff-opt").forEach((b) => (b.onclick = () => { setDifficulty(b.dataset.diff); renderNotePanel(); }));
@@ -1296,12 +1517,15 @@ function wireQuiz() {
     state.quiz.answers[qi] = +b.dataset.o;
     const quiz = state.current.quiz || [];
     const done = Object.keys(state.quiz.answers).length === quiz.length;
-    renderNotePanel();
     if (done) {
       const score = quiz.reduce((s, q, i) => s + (state.quiz.answers[i] === q.answer ? 1 : 0), 0);
+      pushQuizHist(state.current.id, score, quiz.length); // record before re-render so it shows
+      renderNotePanel();
       if (quiz.length && score / quiz.length >= 0.7) confetti();
       award(4 + score * 2);
       if (quiz.length && score === quiz.length) celebrate("quiz-ace");
+    } else {
+      renderNotePanel();
     }
   }));
   const rt = $("#quiz-retake"); if (rt) rt.onclick = () => { state.quiz = { answers: {} }; renderNotePanel(); };
@@ -1785,6 +2009,7 @@ async function goLibrary() {
   state.view = "library";
   state.notes = null;
   state.selectMode = false; state.selected = new Set();
+  state.subjectFilter = "";
   render();
   try {
     state.notes = await listNotes();
