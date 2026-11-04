@@ -36,7 +36,7 @@ if (!document.querySelector(".bg-orbs")) {
 const state = {
   user: null,
   role: null,               // pending | member | admin | blocked (cloud mode)
-  view: "library",          // library | capture | note | admin
+  view: "library",          // library | capture | note | admin | ask
   notes: null,              // null = not loaded yet
   adminUsers: null,         // loaded for the admin panel
   search: "",
@@ -459,6 +459,7 @@ function renderView() {
   if (state.view === "library") { main.innerHTML = libraryHTML(); wireLibrary(); }
   else if (state.view === "capture") { main.innerHTML = captureHTML(); wireCapture(); }
   else if (state.view === "note") { main.innerHTML = noteHTML(); wireNote(); }
+  else if (state.view === "ask") { main.innerHTML = askHTML(); wireAsk(); }
   else if (state.view === "admin") { main.innerHTML = adminHTML(); wireAdmin(); }
 }
 
@@ -618,7 +619,8 @@ function libraryHTML() {
       </div>
       ${state.selectMode
         ? `<button class="btn btn-ghost" id="combine-cancel">Cancel</button>`
-        : `${(state.notes && state.notes.length >= 2) ? `<button class="btn btn-outline" id="combine-start">⛓ Combine</button>` : ""}
+        : `${(state.notes && state.notes.length >= 1) ? `<button class="btn btn-outline" id="ask-all">✦ Ask</button>` : ""}
+           ${(state.notes && state.notes.length >= 2) ? `<button class="btn btn-outline" id="combine-start">⛓ Combine</button>` : ""}
            <button class="btn btn-primary" id="new-note">＋ New note</button>`}
     </div>
   </div>`;
@@ -682,6 +684,7 @@ function libraryHTML() {
 function wireLibrary() {
   const nb = $("#new-note"); if (nb) nb.onclick = goCapture;
   const nb2 = $("#new-note-2"); if (nb2) nb2.onclick = goCapture;
+  const ask = $("#ask-all"); if (ask) ask.onclick = goAsk;
   const cs = $("#combine-start"); if (cs) cs.onclick = () => { state.selectMode = true; state.selected = new Set(); renderView(); };
   const cc = $("#combine-cancel"); if (cc) cc.onclick = exitSelectMode;
   const cg = $("#combine-go"); if (cg) cg.onclick = combineSelected;
@@ -1032,11 +1035,19 @@ function openNoteObject(note) {
   render();
 }
 
+// Note sub-views, split into the reading tabs (shown on the bar) and the study
+// tools (folded into one "✦ Study" menu to keep the bar calm instead of a
+// scrolling strip of eight equal choices).
+const READ_TABS = [["notes", "Notes"], ["mainpoints", "Main Points"], ["advanced", "Advanced"]];
+const STUDY_TABS = [["flashcards", "Flashcards", "🎴"], ["quiz", "Quiz", "✓"], ["teach", "Teach-back", "🗣"], ["podcast", "Podcast", "🎙"], ["chat", "Chat", "💬"]];
+
 function noteHTML() {
   const n = state.current;
-  const tabs = [
-    ["notes", "Notes"], ["advanced", "Advanced"], ["mainpoints", "Main Points"], ["flashcards", "Flashcards"], ["quiz", "Quiz"], ["teach", "Teach-back"], ["podcast", "Podcast"], ["chat", "Chat"],
-  ].map(([k, label]) => `<button data-tab="${k}" class="${state.noteTab === k ? "active" : ""}">${label}</button>`).join("");
+  const readTabs = READ_TABS
+    .map(([k, label]) => `<button data-tab="${k}" class="${state.noteTab === k ? "active" : ""}">${label}</button>`)
+    .join("");
+  const studyHit = STUDY_TABS.find(([k]) => k === state.noteTab);
+  const studyBtn = `<button id="study-btn" class="study-btn${studyHit ? " active" : ""}" aria-haspopup="menu" aria-expanded="false">✦ ${studyHit ? studyHit[1] : "Study"} <span class="caret">▾</span></button>`;
 
   return `<div>
     <div class="note-head">
@@ -1051,7 +1062,7 @@ function noteHTML() {
       ${n.source_ref ? `· <a href="${escapeHtml(n.source_ref)}" target="_blank" rel="noopener">source</a>` : ""}
       <button class="subject-chip" id="note-subject">🏷 ${getSubject(n.id) ? escapeHtml(getSubject(n.id)) : "Add subject"}</button>
     </div>
-    <div class="tabs">${tabs}</div>
+    <div class="tabs"><div class="tabs-read">${readTabs}</div><div class="menu-wrap">${studyBtn}</div></div>
     <div id="note-panel"></div>
   </div>`;
 }
@@ -1069,12 +1080,58 @@ function wireNote() {
     sub.textContent = "🏷 " + (getSubject(state.current.id) || "Add subject");
     toast(v.trim() ? "Subject set ✓" : "Subject cleared", "success");
   };
-  $$(".tabs button").forEach((b) => (b.onclick = () => { state.noteTab = b.dataset.tab; state.notesEditing = false; renderNotePanel(); syncTabActive(); }));
+  $$(".tabs-read button").forEach((b) => (b.onclick = () => { state.noteTab = b.dataset.tab; state.notesEditing = false; renderNotePanel(); syncTabActive(); }));
+  const studyBtn = $("#study-btn");
+  if (studyBtn) studyBtn.onclick = (e) => { e.stopPropagation(); openStudyMenu(studyBtn); };
   renderNotePanel();
 }
 
 function syncTabActive() {
-  $$(".tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === state.noteTab));
+  $$(".tabs-read button").forEach((b) => b.classList.toggle("active", b.dataset.tab === state.noteTab));
+  const sbtn = $("#study-btn");
+  if (sbtn) {
+    const hit = STUDY_TABS.find(([k]) => k === state.noteTab);
+    sbtn.classList.toggle("active", !!hit);
+    sbtn.innerHTML = `✦ ${hit ? hit[1] : "Study"} <span class="caret">▾</span>`;
+  }
+}
+
+// The "✦ Study" dropdown: folds Flashcards / Quiz / Teach-back / Podcast / Chat
+// into one menu so the tab bar stays calm. Mirrors the account menu's behaviour
+// (reuses the .menu component + outside-click / Escape to close).
+let studyMenuCleanup = null;
+function openStudyMenu(btn) {
+  if (studyMenuCleanup) { studyMenuCleanup(); return; } // toggle closed
+  const menu = document.createElement("div");
+  menu.className = "menu study-menu";
+  menu.id = "study-menu";
+  menu.setAttribute("role", "menu");
+  menu.innerHTML = STUDY_TABS
+    .map(([k, label, icon]) => `<button role="menuitem" data-tab="${k}" class="${state.noteTab === k ? "active" : ""}"><span class="si-ico">${icon}</span>${label}</button>`)
+    .join("");
+  btn.parentElement.appendChild(menu);
+  btn.setAttribute("aria-expanded", "true");
+
+  const onDocClick = (e) => { if (!menu.contains(e.target) && !btn.contains(e.target)) studyMenuCleanup && studyMenuCleanup(); };
+  const onKey = (e) => { if (e.key === "Escape") studyMenuCleanup && studyMenuCleanup(); };
+  studyMenuCleanup = () => {
+    menu.remove();
+    btn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onDocClick);
+    document.removeEventListener("keydown", onKey);
+    studyMenuCleanup = null;
+  };
+
+  $$("#study-menu button").forEach((mi) => (mi.onclick = () => {
+    if (studyMenuCleanup) studyMenuCleanup();
+    state.noteTab = mi.dataset.tab;
+    state.notesEditing = false;
+    renderNotePanel();
+    syncTabActive();
+  }));
+
+  setTimeout(() => document.addEventListener("click", onDocClick), 0);
+  document.addEventListener("keydown", onKey);
 }
 
 function renderNotePanel() {
@@ -1881,6 +1938,180 @@ async function onChatSubmit(e) {
     toast(err.message, "error");
   }
 }
+
+// ── Ask across all notes ─────────────────────────────────────────────────────
+// A library-wide tutor (NotebookLM-style): searches every note, answers only
+// from them, and cites which note each part of the answer came from. The thread
+// is kept in memory for the session so it survives opening a cited note.
+let askThread = [];       // [{ role, content, sources? }]
+let askCorpus = null;     // { sig, items:[{id,title,text}] } — cached note bodies
+const ASK_STOPWORDS = new Set("the a an and or of to in on for is are was were be been being with as at by from that this these those it its into about over under than then so if but not no do does did can could should would will your you my our their his her they them we us what which who whom whose how why when where".split(" "));
+const ASK_SUGGESTIONS = [
+  "What are the key themes across all my notes?",
+  "Give me a 5-point summary of everything.",
+  "What should I review before an exam?",
+];
+
+function corpusSig(notes) { return (notes || []).map((n) => n.id + ":" + (n.updated_at || "")).join("|"); }
+
+// Load every note's body once and cache it; re-loads only when the note set or
+// any note's updated_at changes (so edits/new notes/deletes invalidate it).
+async function loadAskCorpus() {
+  const notes = state.notes || [];
+  const sig = corpusSig(notes);
+  if (askCorpus && askCorpus.sig === sig) return askCorpus.items;
+  const items = await Promise.all(notes.map(async (meta) => {
+    try {
+      const full = await getNote(meta.id);
+      return { id: meta.id, title: full.title || meta.title || "Untitled", text: String(full.notes_md || full.transcript || "").trim() };
+    } catch {
+      return { id: meta.id, title: meta.title || "Untitled", text: "" };
+    }
+  }));
+  askCorpus = { sig, items: items.filter((it) => it.text) };
+  return askCorpus.items;
+}
+
+function askKeywords(q) {
+  return [...new Set(String(q).toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length >= 3 && !ASK_STOPWORDS.has(w)))];
+}
+
+// Pick the notes most relevant to the question (keyword overlap, title weighted).
+// Falls back to the most recent notes when nothing matches, so the model can
+// still say "your notes don't cover this".
+function rankNotes(items, q, k) {
+  const kw = askKeywords(q);
+  if (!kw.length) return items.slice(0, Math.min(k, items.length));
+  const scored = items.map((it) => {
+    const title = it.title.toLowerCase(), body = it.text.toLowerCase();
+    let score = 0;
+    for (const w of kw) {
+      if (title.includes(w)) score += 5;
+      let idx = 0, c = 0;
+      while (c < 25 && (idx = body.indexOf(w, idx)) !== -1) { c++; idx += w.length; }
+      score += c;
+    }
+    return { it, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const hits = scored.filter((s) => s.score > 0).slice(0, k).map((s) => s.it);
+  return hits.length ? hits : items.slice(0, Math.min(k, items.length));
+}
+
+function buildAskContext(sources) {
+  const CAP = 2600; // keep each source compact so several fit comfortably
+  return sources.map((s) => `[${s.n}] "${s.title}"\n${s.text.slice(0, CAP)}`).join("\n\n----\n\n");
+}
+
+// Render an answer: Markdown + inline [n] citation chips + a Sources footer.
+function renderAskAnswer(content, sources) {
+  let html = mdToHtml(content);
+  const cited = new Set();
+  html = html.replace(/\[(\d+)\]/g, (m, d) => {
+    const n = +d;
+    const src = sources.find((s) => s.n === n);
+    if (!src) return m;
+    cited.add(n);
+    return `<button class="cite" data-note="${escapeHtml(src.id)}" title="${escapeHtml(src.title)}">${n}</button>`;
+  });
+  const used = sources.filter((s) => cited.has(s.n));
+  const foot = used.length
+    ? `<div class="cite-sources"><span class="cs-label">Sources</span>${used.map((s) => `<button class="cite-src" data-note="${escapeHtml(s.id)}">${escapeHtml(s.title.slice(0, 44))} ↗</button>`).join("")}</div>`
+    : "";
+  return `<div class="prose">${html}</div>${foot}`;
+}
+
+function askMsgHTML(m) {
+  if (m.role === "user") return `<div class="msg user">${escapeHtml(m.content)}</div>`;
+  return `<div class="msg assistant">${renderAskAnswer(m.content, m.sources || [])}</div>`;
+}
+
+function askHTML() {
+  const n = (state.notes || []).length;
+  const body = askThread.length
+    ? askThread.map(askMsgHTML).join("")
+    : `<div class="chat-empty">
+        <div class="ask-hi">Ask anything across your ${n} note${n === 1 ? "" : "s"}.<br>I'll answer from them and show which note each part came from.</div>
+        <div class="ask-suggest">${ASK_SUGGESTIONS.map((s) => `<button class="ask-sugg" type="button">${escapeHtml(s)}</button>`).join("")}</div>
+      </div>`;
+  return `<div class="page-head">
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn btn-icon btn-ghost" id="ask-back" aria-label="Back">←</button>
+        <div>
+          <h1>Ask your notes</h1>
+          <p>Answered from all ${n} of your note${n === 1 ? "" : "s"}, with sources.</p>
+        </div>
+      </div>
+      ${askThread.length ? `<button class="btn btn-ghost" id="ask-clear">Clear</button>` : ""}
+    </div>
+    <div class="chat ask-chat">
+      <div class="chat-scroll" id="ask-scroll">${body}</div>
+      <form class="chat-form" id="ask-form">
+        <input class="input" id="ask-input" placeholder="Ask across all your notes…" autocomplete="off" />
+        <button class="btn btn-primary" type="submit" aria-label="Send">↑</button>
+      </form>
+    </div>`;
+}
+
+function wireAsk() {
+  const back = $("#ask-back"); if (back) back.onclick = goLibrary;
+  const clear = $("#ask-clear"); if (clear) clear.onclick = () => { askThread = []; renderView(); };
+  const scroll = $("#ask-scroll");
+  if (scroll) {
+    scroll.scrollTop = scroll.scrollHeight;
+    scroll.onclick = (e) => { const b = e.target.closest(".cite,.cite-src"); if (b && b.dataset.note) openNote(b.dataset.note); };
+  }
+  $$(".ask-sugg").forEach((b) => (b.onclick = () => { const inp = $("#ask-input"); if (inp) inp.value = b.textContent; submitAsk(); }));
+  const form = $("#ask-form"); if (form) form.onsubmit = (e) => { e.preventDefault(); submitAsk(); };
+  const inp = $("#ask-input"); if (inp) inp.focus();
+}
+
+async function submitAsk() {
+  const input = $("#ask-input");
+  if (!input) return;
+  const q = input.value.trim();
+  if (!q) return;
+  const scroll = $("#ask-scroll");
+  if (!scroll) return;
+  input.value = "";
+  const firstTurn = askThread.length === 0;
+  if (firstTurn) scroll.innerHTML = ""; // drop the empty-state / suggestions
+  const userMsg = { role: "user", content: q };
+  askThread.push(userMsg);
+  scroll.insertAdjacentHTML("beforeend", askMsgHTML(userMsg));
+  scroll.insertAdjacentHTML("beforeend", `<div class="msg assistant" id="ask-pending"><div class="spinner"></div><span class="ask-pending-label">Searching your notes…</span></div>`);
+  scroll.scrollTop = scroll.scrollHeight;
+  if (firstTurn) ensureAskClearBtn();
+  try {
+    const corpus = await loadAskCorpus();
+    if (!corpus.length) throw new Error("None of your notes have content to search yet.");
+    const picked = rankNotes(corpus, q, 5);
+    const sources = picked.map((it, i) => ({ n: i + 1, id: it.id, title: it.title, text: it.text }));
+    const context = buildAskContext(sources);
+    const history = askThread.slice(0, -1).slice(-8).map((m) => ({ role: m.role, content: String(m.content).replace(/\[(\d+)\]/g, "") }));
+    const answer = await aiGenerate("ask", { context, history, question: q });
+    $("#ask-pending")?.remove();
+    const msg = { role: "assistant", content: answer, sources: sources.map(({ n, id, title }) => ({ n, id, title })) };
+    askThread.push(msg);
+    const sc = $("#ask-scroll");
+    if (sc) { sc.insertAdjacentHTML("beforeend", askMsgHTML(msg)); sc.scrollTop = sc.scrollHeight; }
+  } catch (err) {
+    $("#ask-pending")?.remove();
+    toast(err.message, "error");
+  }
+}
+
+// Reveal the header "Clear" button once a conversation has started (the header
+// isn't re-rendered mid-thread, so add it in place the first time).
+function ensureAskClearBtn() {
+  if ($("#ask-clear")) return;
+  const h = $(".page-head");
+  if (!h) return;
+  h.insertAdjacentHTML("beforeend", `<button class="btn btn-ghost" id="ask-clear">Clear</button>`);
+  const c = $("#ask-clear"); if (c) c.onclick = () => { askThread = []; renderView(); };
+}
+
+function goAsk() { state.view = "ask"; renderView(); }
 
 // ── Note actions ─────────────────────────────────────────────────────────────
 async function patchNote(patch) {

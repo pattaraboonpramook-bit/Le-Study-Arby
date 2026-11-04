@@ -1,6 +1,6 @@
 // ai.js — client-side AI calls via Google Gemini (free tier).
 // Calls the Gemini API directly from the browser using the key in ai-config.js.
-// Tasks: notes | lesson | flashcards | quiz | chat
+// Tasks: notes | lesson | flashcards | quiz | chat | ask
 import { GEMINI_MODEL } from "./ai-config.js";
 
 const MAX_SOURCE = 600_000;
@@ -69,6 +69,18 @@ Rules: exactly 4 options per question; "answer" is the 0-based index of the corr
 
 const CHAT_SYSTEM = `You are a friendly, sharp study tutor. Answer the student's questions using their study notes below as your primary source. Be clear and concise, use short examples where they help, and format with Markdown when useful. If the notes don't cover something, say so briefly and then give your best general explanation. Don't make up specifics that would appear in their course if they aren't in the notes.`;
 
+const ASK_SYSTEM = `You are a study assistant answering a student's question using ONLY their own notes, provided below as numbered SOURCES. Each source is one of the student's notes, written as:
+
+[n] "Note title"
+<the note's content>
+
+Rules:
+- Answer the question directly, clearly, and concisely, in GitHub-flavoured Markdown.
+- Base every claim on the sources. Immediately after a statement drawn from a source, cite it inline with its bracketed number, e.g. [1], or [2][3] when several apply.
+- Use ONLY information found in the sources. Never add facts, figures, names, or dates that are not there.
+- If the sources do not answer the question, say so in one short sentence (for example, "Your notes don't cover this.") and stop — do not guess, and never cite a source you did not actually use.
+- When the answer draws on several notes, synthesise across them and cite each one where it contributes.`;
+
 const PODCAST_SYSTEM = `You write a warm, natural two-host study podcast (an "audio overview") that sounds like two real people actually talking — not a script being read aloud. Two hosts — A (Alex) and B (Sam) — walk through the student's material together in a friendly, curious way that helps them understand and remember it.
 Return ONLY a JSON array of turns that alternate speakers, shaped exactly:
 [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]
@@ -103,6 +115,7 @@ const TASKS = {
   flashcards: { system: FLASHCARDS_SYSTEM, max_tokens: 6000, json: true },
   quiz:       { system: QUIZ_SYSTEM,       max_tokens: 8000, json: true },
   chat:       { system: CHAT_SYSTEM,       max_tokens: 4000, json: false },
+  ask:        { system: ASK_SYSTEM,        max_tokens: 4000, json: false },
   feynman:    { system: FEYNMAN_SYSTEM,    max_tokens: 2000, json: true },
   podcast:    { system: PODCAST_SYSTEM,    max_tokens: 8000, json: true },
 };
@@ -215,12 +228,13 @@ function buildBody(task, payload, cfg) {
     };
   }
 
-  if (task === "chat") {
+  if (task === "chat" || task === "ask") {
     const context = String(payload?.context || "").slice(0, MAX_SOURCE);
     const history = Array.isArray(payload?.history) ? payload.history : [];
     const question = String(payload?.question || "").trim();
+    const label = task === "ask" ? "SOURCES" : "STUDY NOTES";
     return {
-      system_instruction: { parts: [{ text: `${cfg.system}\n\nSTUDY NOTES:\n\n${context}` }] },
+      system_instruction: { parts: [{ text: `${cfg.system}\n\n${label}:\n\n${context}` }] },
       contents: [
         ...history
           .filter((m) => m && (m.role === "user" || m.role === "assistant") && m.content)

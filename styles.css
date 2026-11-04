@@ -258,11 +258,18 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .note-head h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.4rem, 3.6vw, 2rem); letter-spacing: -0.02em; flex: 1; }
 .note-sub { color: var(--muted); font-size: 0.82rem; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; }
 
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 24px; overflow-x: auto; }
-.tabs button { padding: 12px 16px; font-weight: 600; font-size: 0.92rem; color: var(--text-2); position: relative; white-space: nowrap; }
-.tabs button.active { color: var(--accent); }
-.tabs button.active::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2.5px;
+.tabs { display: flex; align-items: stretch; gap: 10px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.tabs-read { display: flex; gap: 4px; min-width: 0; flex: 1 1 auto; overflow-x: auto; }
+.tabs-read button { padding: 12px 16px; font-weight: 600; font-size: 0.92rem; color: var(--text-2); position: relative; white-space: nowrap; }
+.tabs-read button.active { color: var(--accent); }
+.tabs-read button.active::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2.5px;
   background: var(--accent); border-radius: 2px; }
+.tabs .menu-wrap { align-self: center; flex: none; }
+.study-btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; font-weight: 600; font-size: 0.9rem;
+  color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; white-space: nowrap; transition: .15s; }
+.study-btn:hover { color: var(--text); background: var(--border); }
+.study-btn.active { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.study-btn .caret { font-size: 0.7em; opacity: 0.75; }
 
 .panel { animation: fade .25s ease; }
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } }
@@ -460,6 +467,26 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .chat-form input { flex: 1; border-radius: 999px; }
 .chat-empty { text-align: center; color: var(--muted); margin: auto; padding: 30px; }
 
+/* Ask across all notes */
+.ask-chat { max-width: 760px; }
+.ask-hi { margin-bottom: 18px; line-height: 1.6; color: var(--text-2); }
+.ask-suggest { display: flex; flex-direction: column; gap: 8px; max-width: 420px; margin: 0 auto; }
+.ask-sugg { padding: 11px 15px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+  color: var(--text); font-size: .9rem; font-weight: 500; text-align: left; transition: .15s; }
+.ask-sugg:hover { border-color: var(--accent); color: var(--accent); }
+#ask-pending { display: flex; align-items: center; gap: 10px; color: var(--text-2); }
+.ask-pending-label { font-size: .9rem; }
+.cite { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 4px;
+  margin: 0 1px; vertical-align: super; font-size: .68rem; font-weight: 700; line-height: 1;
+  color: var(--accent); background: var(--accent-weak); border-radius: 5px; transition: .12s; }
+.cite:hover { color: var(--accent-ink); background: var(--accent); }
+.cite-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px;
+  padding-top: 11px; border-top: 1px solid var(--border); }
+.cs-label { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.cite-src { font-size: .8rem; font-weight: 600; color: var(--accent); background: var(--accent-weak);
+  padding: 4px 11px; border-radius: 999px; transition: .15s; }
+.cite-src:hover { filter: brightness(1.05); }
+
 /* Teach-back (Feynman) */
 .teach { max-width: 680px; margin: 0 auto; }
 .btn-icon.recording { background: var(--bad) !important; color: #fff; animation: rec-pulse 1.4s ease-in-out infinite; }
@@ -492,6 +519,9 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .menu-lang { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; font-size: .9rem; }
 .menu-lang select { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); max-width: 150px; }
 .menu-wrap { position: relative; }
+.study-menu { top: calc(100% + 6px); }
+.menu button.active { color: var(--accent); background: var(--accent-weak); font-weight: 700; }
+.study-menu .si-ico { display: inline-block; width: 20px; text-align: center; }
 
 @media (max-width: 560px) {
   .flashcard { height: 260px; }
