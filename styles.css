@@ -243,6 +243,18 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .imgrm { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; font-size: .7rem; display: grid; place-content: center; }
 .imgrm:hover { background: var(--bad); }
 .pill.image { background: var(--accent-weak); color: var(--accent); }
+.pill.file { background: var(--surface-2); color: var(--text-2); }
+
+/* Files capture mode */
+.filelist { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.filechip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); }
+.fc-ic { font-size: 1.1rem; flex: none; }
+.fc-name { flex: 1; min-width: 0; font-weight: 600; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-size { flex: none; font-size: .78rem; color: var(--muted); }
+.filerm { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--surface-2); color: var(--text-2);
+  font-size: .72rem; display: grid; place-content: center; transition: .15s; }
+.filerm:hover { background: var(--bad-weak); color: var(--bad); }
 .transcript-box { margin-top: 20px; text-align: left; background: var(--surface-2); border-radius: var(--radius-sm);
   padding: 16px; min-height: 120px; max-height: 320px; overflow-y: auto; line-height: 1.7; white-space: pre-wrap; }
 .transcript-box .interim { color: var(--muted); }

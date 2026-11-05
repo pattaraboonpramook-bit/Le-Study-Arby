@@ -52,6 +52,7 @@ const state = {
   ytManual: "",             // YouTube transcript (fetched or pasted)
   ytStatus: "",
   images: [],               // picked photos for the Photo capture mode
+  files: [],                // picked files (PDF/text) for the Files capture mode
   fc: { order: [], i: 0, flipped: false },
   quiz: { answers: {} },
   chat: null,               // loaded lazily
@@ -348,7 +349,7 @@ function titleFromMarkdown(md, fallback = "Untitled note") {
 }
 
 const fmtDate = (d) => new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-const sourceLabel = { record: "Recording", paste: "Pasted", youtube: "YouTube", image: "Photos" };
+const sourceLabel = { record: "Recording", paste: "Pasted", youtube: "YouTube", image: "Photos", file: "File" };
 
 // Difficulty + count for flashcards / quizzes (stored per-device).
 const getDifficulty = () => { try { return localStorage.getItem("recall_difficulty") || "Medium"; } catch { return "Medium"; } };
@@ -801,8 +802,8 @@ function wireAdmin() {
 // ── Capture ──────────────────────────────────────────────────────────────────
 function captureHTML() {
   const mode = state.captureMode;
-  const seg = ["record", "paste", "youtube", "image"].map((m) =>
-    `<button data-mode="${m}" class="${m === mode ? "active" : ""}">${{ record: "🎙 Record", paste: "📄 Paste", youtube: "▶ YouTube", image: "📷 Photo" }[m]}</button>`).join("");
+  const seg = ["record", "paste", "youtube", "image", "file"].map((m) =>
+    `<button data-mode="${m}" class="${m === mode ? "active" : ""}">${{ record: "🎙 Record", paste: "📄 Paste", youtube: "▶ YouTube", image: "📷 Photo", file: "📎 Files" }[m]}</button>`).join("");
 
   let body = "";
   if (mode === "record") {
@@ -825,7 +826,7 @@ function captureHTML() {
         <summary>⚡ Faster for long videos — paste the transcript instead</summary>
         <textarea class="input" id="yt-manual" style="min-height:150px;margin-top:10px" placeholder="YouTube: ⋯ (or “Show transcript”) → select all → copy → paste here. This skips the slow video-watching step.">${escapeHtml(state.ytManual || "")}</textarea>
       </details>`;
-  } else {
+  } else if (mode === "image") {
     const thumbs = state.images.map((im, i) =>
       `<div class="imgthumb"><img src="${im.url}" alt="" /><button class="imgrm" data-i="${i}" title="Remove" aria-label="Remove">✕</button></div>`).join("");
     body = `<label class="dropzone" id="imgdrop">
@@ -835,10 +836,21 @@ function captureHTML() {
         <div class="dz-sub">Textbook pages, slides, handwriting, diagrams — add several, I'll read them all.</div>
       </label>
       ${state.images.length ? `<div class="imggrid">${thumbs}</div>` : ""}`;
+  } else {
+    const items = state.files.map((f, i) =>
+      `<div class="filechip"><span class="fc-ic">${f.kind === "pdf" ? "📕" : "📄"}</span><span class="fc-name">${escapeHtml(f.name)}</span><span class="fc-size">${fmtSize(f.size)}</span><button class="filerm" data-i="${i}" title="Remove" aria-label="Remove">✕</button></div>`).join("");
+    body = `<label class="dropzone" id="filedrop">
+        <input type="file" id="file-input" accept=".pdf,.txt,.md,.markdown,.csv,application/pdf,text/plain,text/markdown,text/csv" multiple hidden />
+        <div class="dz-ic">📎</div>
+        <div class="dz-main">Tap to add files</div>
+        <div class="dz-sub">PDFs and text files — including from Google Drive, iCloud, or Files on your phone. I'll read them into notes.</div>
+      </label>
+      ${state.files.length ? `<div class="filelist">${items}</div>` : ""}`;
   }
 
-  const canTurbo = state.transcript.trim().length > 0 || mode === "paste" || mode === "youtube" || (mode === "image" && state.images.length > 0);
-  const turboLabel = mode === "youtube" ? "✺ Make lesson" : mode === "image" ? "✺ Read & make notes" : "✺ Turbo it";
+  const canTurbo = state.transcript.trim().length > 0 || mode === "paste" || mode === "youtube"
+    || (mode === "image" && state.images.length > 0) || (mode === "file" && state.files.length > 0);
+  const turboLabel = mode === "youtube" ? "✺ Make lesson" : (mode === "image" || mode === "file") ? "✺ Read & make notes" : "✺ Turbo it";
   return `<div class="capture">
     <div class="note-head" style="margin-bottom:18px">
       <button class="btn btn-icon btn-ghost" id="back" aria-label="Back">←</button>
@@ -868,6 +880,10 @@ function wireCapture() {
   const imgInput = $("#img-input");
   if (imgInput) imgInput.onchange = () => { addImages(imgInput.files); imgInput.value = ""; };
   $$(".imgrm").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); state.images.splice(+b.dataset.i, 1); renderView(); }));
+
+  const fileInput = $("#file-input");
+  if (fileInput) fileInput.onchange = () => { addFiles(fileInput.files); fileInput.value = ""; };
+  $$(".filerm").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); state.files.splice(+b.dataset.i, 1); renderView(); }));
 
   const turbo = $("#turbo");
   if (turbo) turbo.onclick = runTurbo;
@@ -908,6 +924,64 @@ async function addImages(fileList) {
     }
     renderView();
   } catch { toast("Couldn't read one of those images.", "error"); } finally { busy(false); }
+}
+
+// ── File upload (PDF / text) for the Files capture mode ───────────────────────
+const FILE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB/file — base64 inflation keeps us under Gemini's inline limit
+const TOTAL_PDF_MAX = 14 * 1024 * 1024;  // ~14 MB of PDFs → ~18.6 MB base64, under Gemini's ~20 MB inline request cap
+function fmtSize(b) {
+  if (b < 1024) return b + " B";
+  if (b < 1024 * 1024) return Math.round(b / 1024) + " KB";
+  return (b / (1024 * 1024)).toFixed(1) + " MB";
+}
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = reject;
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.readAsDataURL(file);
+  });
+}
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = reject;
+    r.onload = () => resolve(String(r.result || ""));
+    r.readAsText(file);
+  });
+}
+async function addFiles(fileList) {
+  const files = [...(fileList || [])];
+  if (!files.length) return;
+  const room = 5 - state.files.length;
+  if (room <= 0) { toast("That's the max of 5 files.", "error"); return; }
+  busy(true, "Adding files…");
+  try {
+    for (const f of files.slice(0, room)) {
+      const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+      const isText = (f.type && f.type.startsWith("text/")) || /\.(txt|md|markdown|csv|text|log)$/i.test(f.name);
+      if (!isPdf && !isText) {
+        toast(`"${f.name}" isn't a PDF or text file. For Word/PowerPoint, export to PDF first.`, "error");
+        continue;
+      }
+      if (f.size > FILE_MAX_BYTES) {
+        toast(`"${f.name}" is too large (max ${fmtSize(FILE_MAX_BYTES)}). Try splitting it.`, "error");
+        continue;
+      }
+      if (isPdf) {
+        const pdfBytes = state.files.filter((x) => x.kind === "pdf").reduce((s, x) => s + x.size, 0);
+        if (pdfBytes + f.size > TOTAL_PDF_MAX) { toast(`Adding "${f.name}" would exceed the ${fmtSize(TOTAL_PDF_MAX)} total for PDFs. Add fewer or smaller PDFs.`, "error"); continue; }
+        const data = await readFileAsBase64(f);
+        if (!data) { toast(`Couldn't read "${f.name}".`, "error"); continue; }
+        state.files.push({ name: f.name, kind: "pdf", mime: "application/pdf", data, size: f.size });
+      } else {
+        const text = await readFileAsText(f);
+        if (!text.trim()) { toast(`"${f.name}" looks empty.`, "error"); continue; }
+        state.files.push({ name: f.name, kind: "text", text, size: f.size });
+      }
+    }
+    renderView();
+  } catch { toast("Couldn't read one of those files.", "error"); } finally { busy(false); }
 }
 
 function syncPasteArea() {
@@ -962,7 +1036,20 @@ async function runTurbo() {
   const isYouTube = mode === "youtube";
   let task, payload, transcript = "", busyLabel;
 
-  if (mode === "image") {
+  if (mode === "file") {
+    if (!state.files.length) { toast("Add at least one file first.", "error"); return; }
+    const pdfs = state.files.filter((f) => f.kind === "pdf");
+    const texts = state.files.filter((f) => f.kind === "text");
+    const extraText = texts.map((f) => `# ${f.name}\n\n${f.text}`).join("\n\n");
+    if (pdfs.length) {
+      task = "document";
+      payload = { docs: pdfs.map((f) => ({ mime: f.mime, data: f.data })), extraText };
+      transcript = extraText; // PDFs carry no text transcript; keep any text files' content
+      busyLabel = "Reading your files…";
+    } else {
+      task = "notes"; payload = { source: extraText }; transcript = extraText; busyLabel = "Reading your files…";
+    }
+  } else if (mode === "image") {
     if (!state.images.length) { toast("Add at least one photo first.", "error"); return; }
     task = "image"; payload = { images: state.images.map((i) => ({ mime: i.mime, data: i.data })) }; busyLabel = "Reading your photos…";
   } else if (isYouTube) {
@@ -982,11 +1069,12 @@ async function runTurbo() {
   // Watching a video genuinely takes a while — keep a steady, honest message up
   // (with the faster alternative) instead of cycling the quick-task phrases.
   if (task === "video") busyNoteSet("Watching the video — this can take a minute or two for longer clips. Tip: pasting the transcript is much faster.");
+  if (task === "document") busyNoteSet("Reading your file — a long PDF can take a minute.");
   try {
     const notes_md = await aiGenerate(task, payload);
     const note = await createNote({
       title: titleFromMarkdown(notes_md, state.ytTitle || "Untitled note"),
-      source_type: mode === "image" ? "image" : isYouTube ? "youtube" : (mode === "record" ? "record" : "paste"),
+      source_type: mode === "file" ? "file" : mode === "image" ? "image" : isYouTube ? "youtube" : (mode === "record" ? "record" : "paste"),
       source_ref: state.sourceRef || null,
       transcript,
       notes_md,
@@ -994,7 +1082,7 @@ async function runTurbo() {
       quiz: [],
     });
     // reset capture state
-    state.transcript = ""; state.sourceRef = null; state.ytTitle = ""; state.ytManual = ""; state.ytStatus = ""; state.images = [];
+    state.transcript = ""; state.sourceRef = null; state.ytTitle = ""; state.ytManual = ""; state.ytStatus = ""; state.images = []; state.files = [];
     openNoteObject(note);
     toast(praise(), "success");
     confetti();
@@ -2231,7 +2319,7 @@ function goCapture() {
   state.view = "capture";
   state.captureMode = "record";
   state.transcript = ""; state.sourceRef = null; state.ytTitle = ""; state.sourceType = "record";
-  state.ytManual = ""; state.ytStatus = ""; state.images = [];
+  state.ytManual = ""; state.ytStatus = ""; state.images = []; state.files = [];
   renderView();
 }
 async function goLibrary() {

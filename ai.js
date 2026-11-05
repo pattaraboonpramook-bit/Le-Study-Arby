@@ -1,6 +1,6 @@
 // ai.js — client-side AI calls via Google Gemini (free tier).
 // Calls the Gemini API directly from the browser using the key in ai-config.js.
-// Tasks: notes | lesson | flashcards | quiz | chat | ask
+// Tasks: notes | lesson | flashcards | quiz | chat | ask | document | image
 import { GEMINI_MODEL } from "./ai-config.js";
 
 const MAX_SOURCE = 600_000;
@@ -108,6 +108,7 @@ Output only the JSON object.`;
 const TASKS = {
   notes:      { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
   image:      { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
+  document:   { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
   translate:  { system: "",                max_tokens: 8000, json: false },
   advanced:   { system: ADVANCED_SYSTEM,   max_tokens: 6000, json: true },
   lesson:     { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
@@ -218,6 +219,15 @@ function buildBody(task, payload, cfg) {
     return { system_instruction: { parts: [{ text: cfg.system }] }, contents: [{ role: "user", parts }], generationConfig };
   }
 
+  if (task === "document") {
+    // Gemini reads uploaded documents (PDFs of textbook pages, slides, handouts).
+    const docs = Array.isArray(payload?.docs) ? payload.docs : [];
+    const parts = docs.slice(0, 5).map((d) => ({ inline_data: { mime_type: d.mime || "application/pdf", data: d.data } }));
+    const extra = String(payload?.extraText || "").slice(0, MAX_SOURCE);
+    parts.push({ text: `These file(s) are the student's study material — usually a PDF of textbook pages, slides, lecture notes, or a handout. Read ALL of it carefully: extract the text accurately, describe any important figures, tables, or diagrams, and turn everything into clean, organised study notes following the system instructions.${extra ? `\n\nThe student also attached this text, which belongs with the material:\n\n${extra}` : ""}` });
+    return { system_instruction: { parts: [{ text: cfg.system }] }, contents: [{ role: "user", parts }], generationConfig };
+  }
+
   if (task === "feynman") {
     const context = String(payload?.context || "").slice(0, MAX_SOURCE);
     const explanation = String(payload?.explanation || "").trim();
@@ -280,6 +290,10 @@ const RETRYABLE = new Set([0, 408, 429, 500, 502, 503, 504]);
 function tuneCall(task) {
   if (task === "video") {
     return { timeoutMs: 180_000, attemptsPrimary: 1, attemptsFallback: 1, maxModels: 3 };
+  }
+  if (task === "document") {
+    // PDFs can run to many pages — give them room, but don't burn quota on many retries.
+    return { timeoutMs: 120_000, attemptsPrimary: 2, attemptsFallback: 1, maxModels: 3 };
   }
   return { timeoutMs: 45_000, attemptsPrimary: 4, attemptsFallback: 2, maxModels: MODEL_CHAIN.length };
 }
