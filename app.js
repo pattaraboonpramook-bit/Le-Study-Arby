@@ -8,6 +8,7 @@ import {
   listChat, addChat,
 } from "./store.js";
 import { generate, hasGeminiKey, getGeminiKey, setGeminiKey, getLang, setLang, onAiStatus } from "./ai.js";
+import { GOOGLE_CLIENT_ID, GOOGLE_API_KEY } from "./drive-config.js";
 
 // Output languages: value is the name used in the AI prompt; label is the native name.
 const LANGS = [
@@ -845,6 +846,7 @@ function captureHTML() {
         <div class="dz-main">Tap to add files</div>
         <div class="dz-sub">PDFs and text files — including from Google Drive, iCloud, or Files on your phone. I'll read them into notes.</div>
       </label>
+      ${driveEnabled() ? `<button class="btn btn-outline drive-btn" id="drive-btn" type="button">📁 Import from Google Drive</button>` : ""}
       ${state.files.length ? `<div class="filelist">${items}</div>` : ""}`;
   }
 
@@ -884,6 +886,8 @@ function wireCapture() {
   const fileInput = $("#file-input");
   if (fileInput) fileInput.onchange = () => { addFiles(fileInput.files); fileInput.value = ""; };
   $$(".filerm").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); state.files.splice(+b.dataset.i, 1); renderView(); }));
+  const driveBtn = $("#drive-btn");
+  if (driveBtn) driveBtn.onclick = importFromDrive;
 
   const turbo = $("#turbo");
   if (turbo) turbo.onclick = runTurbo;
@@ -982,6 +986,125 @@ async function addFiles(fileList) {
     }
     renderView();
   } catch { toast("Couldn't read one of those files.", "error"); } finally { busy(false); }
+}
+
+// ── Google Drive import (Picker) ─────────────────────────────────────────────
+// One-tap import straight from Drive. Uses the drive.file scope, so the app only
+// ever sees the files the user explicitly picks — no broad Drive access, and no
+// Google verification review needed. Credentials live in drive-config.js.
+function driveEnabled() { return !!(GOOGLE_CLIENT_ID && GOOGLE_API_KEY); }
+
+let driveToken = null; // cached access token for this session
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const s = document.createElement("script");
+    s.src = src; s.async = true;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("Couldn't reach Google — check your connection."));
+    document.head.appendChild(s);
+  });
+}
+
+async function getDriveToken() {
+  await loadScript("https://accounts.google.com/gsi/client");
+  return new Promise((resolve, reject) => {
+    try {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: "https://www.googleapis.com/auth/drive.file",
+        callback: (resp) => {
+          if (resp && resp.access_token) { driveToken = resp.access_token; resolve(resp.access_token); }
+          else reject(new Error("Google sign-in didn't complete."));
+        },
+        error_callback: () => reject(new Error("Google sign-in was cancelled or blocked.")),
+      });
+      client.requestAccessToken({ prompt: driveToken ? "" : "consent" });
+    } catch (e) { reject(e); }
+  });
+}
+
+async function openDrivePicker(token) {
+  await loadScript("https://apis.google.com/js/api.js");
+  await new Promise((res) => gapi.load("picker", res));
+  return new Promise((resolve) => {
+    const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+      .setMimeTypes("application/pdf,text/plain,text/markdown,text/csv,application/vnd.google-apps.document")
+      .setIncludeFolders(false)
+      .setSelectFolderEnabled(false);
+    const picker = new google.picker.PickerBuilder()
+      .setOAuthToken(token)
+      .setDeveloperKey(GOOGLE_API_KEY)
+      .addView(view)
+      .setCallback((data) => {
+        const act = data[google.picker.Response.ACTION];
+        if (act === google.picker.Action.PICKED) resolve(data[google.picker.Response.DOCUMENTS] || []);
+        else if (act === google.picker.Action.CANCEL) resolve([]);
+      })
+      .build();
+    picker.setVisible(true);
+  });
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = reject;
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.readAsDataURL(blob);
+  });
+}
+
+// Download a picked Drive file into the same shape addFiles produces.
+async function fetchDriveFile(doc, token) {
+  const id = doc.id;
+  const name = doc.name || "Drive file";
+  const isGoogleDoc = doc.mimeType === "application/vnd.google-apps.document";
+  const url = isGoogleDoc
+    ? `https://www.googleapis.com/drive/v3/files/${id}/export?mimeType=application/pdf`
+    : `https://www.googleapis.com/drive/v3/files/${id}?alt=media`;
+  const resp = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+  if (!resp.ok) throw new Error(`Couldn't download "${name}" from Drive.`);
+  const isPdf = isGoogleDoc || doc.mimeType === "application/pdf" || /\.pdf$/i.test(name);
+  if (isPdf) {
+    const blob = await resp.blob();
+    if (blob.size > FILE_MAX_BYTES) throw new Error(`"${name}" is too large (max ${fmtSize(FILE_MAX_BYTES)}).`);
+    const data = await blobToBase64(blob);
+    const outName = isGoogleDoc && !/\.pdf$/i.test(name) ? name + ".pdf" : name;
+    return { name: outName, kind: "pdf", mime: "application/pdf", data, size: blob.size };
+  }
+  const text = await resp.text();
+  return { name, kind: "text", text, size: text.length };
+}
+
+async function importFromDrive() {
+  if (!driveEnabled()) { toast("Google Drive isn't set up yet — add credentials in drive-config.js.", "error"); return; }
+  if (state.files.length >= 5) { toast("That's the max of 5 files.", "error"); return; }
+  try {
+    busy(true, "Connecting to Google Drive…");
+    const token = await getDriveToken();
+    busy(false); // let the Picker modal show unobstructed
+    const docs = await openDrivePicker(token);
+    if (!docs.length) return;
+    busy(true, "Importing from Drive…");
+    for (const d of docs) {
+      if (state.files.length >= 5) { toast("That's the max of 5 files.", "error"); break; }
+      try {
+        const f = await fetchDriveFile(d, token);
+        if (f.kind === "pdf") {
+          const pdfBytes = state.files.filter((x) => x.kind === "pdf").reduce((s, x) => s + x.size, 0);
+          if (pdfBytes + f.size > TOTAL_PDF_MAX) { toast(`"${f.name}" would exceed the ${fmtSize(TOTAL_PDF_MAX)} total for PDFs.`, "error"); continue; }
+        } else if (!f.text.trim()) { toast(`"${f.name}" looks empty.`, "error"); continue; }
+        state.files.push(f);
+      } catch (e) { toast(e.message, "error"); }
+    }
+    renderView();
+  } catch (err) {
+    toast(err.message || "Google Drive import failed.", "error");
+  } finally {
+    busy(false);
+  }
 }
 
 function syncPasteArea() {

@@ -256,6 +256,7 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .filerm { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--surface-2); color: var(--text-2);
   font-size: .72rem; display: grid; place-content: center; transition: .15s; }
 .filerm:hover { background: var(--bad-weak); color: var(--bad); }
+.drive-btn { width: 100%; margin-top: 12px; justify-content: center; gap: 8px; }
 .transcript-box { margin-top: 20px; text-align: left; background: var(--surface-2); border-radius: var(--radius-sm);
   padding: 16px; min-height: 120px; max-height: 320px; overflow-y: auto; line-height: 1.7; white-space: pre-wrap; }
 .transcript-box .interim { color: var(--muted); }
