@@ -147,7 +147,7 @@ function confetti() {
   c.width = innerWidth; c.height = innerHeight;
   document.body.appendChild(c);
   const ctx = c.getContext("2d");
-  const colors = ["#5b46c9", "#9d88ff", "#b0803f", "#3f8f6b", "#c0503f", "#e8c96e"];
+  const colors = ["#d4af37", "#e6c86b", "#b8902b", "#f0d98a", "#8e6d14", "#3f8f6b"];
   const parts = Array.from({ length: 110 }, () => ({
     x: innerWidth / 2 + (Math.random() - 0.5) * 160, y: innerHeight * 0.32,
     vx: (Math.random() - 0.5) * 11, vy: Math.random() * -9 - 4,
