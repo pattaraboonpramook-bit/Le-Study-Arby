@@ -2,7 +2,7 @@
 // App-shell caching so the app launches offline. Never caches /api/* (those
 // always need the network) or Supabase requests. Static assets: stale-while-
 // revalidate. Navigations: network-first, falling back to the cached shell.
-const VERSION = "recall-v32";
+const VERSION = "recall-v33";
 const CORE = [
   "./",
   "index.html",
@@ -14,6 +14,7 @@ const CORE = [
   "ai.js",
   "ai-config.js",
   "drive-config.js",
+  "utils.js",
   "gamify.js",
   "manifest.webmanifest",
   "icons/icon.svg",

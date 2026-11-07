@@ -21,6 +21,7 @@ const LANGS = [
   { v: "Russian", n: "Русский" },
 ];
 import { levelInfo, addXP, ACHIEVEMENTS, getEarned, earnedCount, unlock } from "./gamify.js";
+import { fmtDate, fmtSize, titleFromMarkdown, safeName, sourceLabel, downloadText, downloadJSON } from "./utils.js";
 
 const app = document.getElementById("app");
 
@@ -342,15 +343,7 @@ function mdToHtml(md) {
   return out;
 }
 
-function titleFromMarkdown(md, fallback = "Untitled note") {
-  const h1 = (md || "").match(/^#\s+(.+)/m);
-  if (h1) return h1[1].trim().slice(0, 120);
-  const first = (md || "").split(/\r?\n/).find((l) => l.trim());
-  return first ? first.trim().replace(/^#+\s*/, "").slice(0, 120) : fallback;
-}
-
-const fmtDate = (d) => new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-const sourceLabel = { record: "Recording", paste: "Pasted", youtube: "YouTube", image: "Photos", file: "File" };
+// titleFromMarkdown, fmtDate, sourceLabel → utils.js
 
 // Difficulty + count for flashcards / quizzes (stored per-device).
 const getDifficulty = () => { try { return localStorage.getItem("recall_difficulty") || "Medium"; } catch { return "Medium"; } };
@@ -396,17 +389,7 @@ const setSubject = (id, s) => {
   } catch {}
 };
 
-// Download a text file (used for Markdown export).
-function downloadText(text, filename, type = "text/markdown") {
-  const blob = new Blob([text], { type: `${type};charset=utf-8` });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-// A filesystem-safe version of a note title.
-const safeName = (s) => (s || "note").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "note";
+// downloadText, safeName → utils.js
 
 // Study-tools bar (difficulty + how many) for the Flashcards / Quiz tabs.
 function toolsBar(kind) {
@@ -952,11 +935,7 @@ async function addImages(fileList) {
 // ── File upload (PDF / text) for the Files capture mode ───────────────────────
 const FILE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB/file — base64 inflation keeps us under Gemini's inline limit
 const TOTAL_PDF_MAX = 14 * 1024 * 1024;  // ~14 MB of PDFs → ~18.6 MB base64, under Gemini's ~20 MB inline request cap
-function fmtSize(b) {
-  if (b < 1024) return b + " B";
-  if (b < 1024 * 1024) return Math.round(b / 1024) + " KB";
-  return (b / (1024 * 1024)).toFixed(1) + " MB";
-}
+// fmtSize → utils.js
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -2370,14 +2349,7 @@ function genCTA(icon, title, sub, btnId, btnLabel) {
 }
 
 // ── Backup / restore (export & import the individual's data) ─────────────────
-function downloadJSON(obj, filename) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+// downloadJSON → utils.js
 
 async function exportData() {
   busy(true, "Preparing your backup…");
