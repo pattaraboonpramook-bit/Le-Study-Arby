@@ -621,8 +621,7 @@ function libraryHTML() {
       </div>
       ${state.selectMode
         ? `<button class="btn btn-ghost" id="combine-cancel">Cancel</button>`
-        : `${(state.notes && state.notes.length >= 1) ? `<button class="btn btn-outline" id="ask-all">✦ Ask</button>` : ""}
-           ${(state.notes && state.notes.length >= 2) ? `<button class="btn btn-outline" id="combine-start">⛓ Combine</button>` : ""}
+        : `${(state.notes && state.notes.length >= 1) ? `<div class="menu-wrap"><button class="btn btn-icon btn-ghost" id="lib-more" title="More actions" aria-label="More actions" aria-haspopup="menu">⋯</button></div>` : ""}
            <button class="btn btn-primary" id="new-note">＋ New note</button>`}
     </div>
   </div>`;
@@ -686,8 +685,7 @@ function libraryHTML() {
 function wireLibrary() {
   const nb = $("#new-note"); if (nb) nb.onclick = goCapture;
   const nb2 = $("#new-note-2"); if (nb2) nb2.onclick = goCapture;
-  const ask = $("#ask-all"); if (ask) ask.onclick = goAsk;
-  const cs = $("#combine-start"); if (cs) cs.onclick = () => { state.selectMode = true; state.selected = new Set(); renderView(); };
+  const more = $("#lib-more"); if (more) more.onclick = (e) => { e.stopPropagation(); openLibMenu(more); };
   const cc = $("#combine-cancel"); if (cc) cc.onclick = exitSelectMode;
   const cg = $("#combine-go"); if (cg) cg.onclick = combineSelected;
   $$(".subj-opt").forEach((b) => (b.onclick = () => { state.subjectFilter = b.dataset.subj; renderView(); }));
@@ -707,6 +705,27 @@ function wireLibrary() {
       renderView();
     } else openNote(c.dataset.id);
   }));
+}
+
+// Library "⋯" overflow menu — holds the secondary actions (Ask, Combine) so the
+// header stays calm. Mirrors the account menu's build + outside-click-to-close.
+function openLibMenu(btn) {
+  if ($("#lib-menu")) { $("#lib-menu").remove(); return; } // toggle closed
+  const n = (state.notes || []).length;
+  const menu = document.createElement("div");
+  menu.className = "menu lib-menu";
+  menu.id = "lib-menu";
+  menu.setAttribute("role", "menu");
+  menu.innerHTML =
+    `<button id="lm-ask">✦ Ask across notes</button>` +
+    (n >= 2 ? `<button id="lm-combine">⛓ Combine notes</button>` : "");
+  btn.parentElement.appendChild(menu);
+  const ask = $("#lm-ask"); if (ask) ask.onclick = () => { menu.remove(); goAsk(); };
+  const comb = $("#lm-combine"); if (comb) comb.onclick = () => { menu.remove(); state.selectMode = true; state.selected = new Set(); renderView(); };
+  setTimeout(() => document.addEventListener("click", function close(e) {
+    if (menu.contains(e.target) || e.target === btn) return;
+    menu.remove(); document.removeEventListener("click", close);
+  }), 0);
 }
 
 function exitSelectMode() { state.selectMode = false; state.selected = new Set(); renderView(); }

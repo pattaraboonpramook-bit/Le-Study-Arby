@@ -534,6 +534,7 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .menu-lang select { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); max-width: 150px; }
 .menu-wrap { position: relative; }
 .study-menu { top: calc(100% + 6px); }
+.lib-menu { top: calc(100% + 6px); }
 .menu button.active { color: var(--accent); background: var(--accent-weak); font-weight: 700; }
 .study-menu .si-ico { display: inline-block; width: 20px; text-align: center; }
 
