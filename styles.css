@@ -301,6 +301,11 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
   font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .prose blockquote { border-left: 3px solid var(--accent); padding-left: 14px; color: var(--text-2); margin: 0 0 14px; }
 .prose hr { border: none; border-top: 1px solid var(--border); margin: 22px 0; }
+/* KaTeX math: inherit text colour (works in both themes); let long display
+   equations scroll sideways on narrow screens instead of breaking the layout. */
+.katex { font-size: 1.04em; }
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 2px; margin: 10px 0; }
+.katex-display > .katex { white-space: nowrap; }
 
 /* Generate empty-state inside a tab */
 .gen-cta { text-align: center; padding: 46px 20px; background: var(--surface); border: 1px dashed var(--border);

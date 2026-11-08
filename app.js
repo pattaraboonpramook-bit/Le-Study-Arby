@@ -345,6 +345,35 @@ function mdToHtml(md) {
 
 // titleFromMarkdown, fmtDate, sourceLabel → utils.js
 
+// ── Math typesetting (KaTeX) ─────────────────────────────────────────────────
+// Gemini writes math and vectors in LaTeX ($…$, $$…$$, \overrightarrow{AB}, …).
+// KaTeX turns that source into real symbols; without it the raw "$ABCD$" leaks
+// onto the page. KaTeX is loaded from a CDN in index.html. If it hasn't loaded
+// yet (slow network) or we're offline on a first run, we leave the source as-is
+// and re-typeset once the "load" event fires. $$…$$ / \[…\] are display math;
+// $…$ / \(…\) are inline. Code blocks and the Markdown editor are left alone.
+const KATEX_OPTS = {
+  delimiters: [
+    { left: "$$", right: "$$", display: true },
+    { left: "\\[", right: "\\]", display: true },
+    { left: "\\(", right: "\\)", display: false },
+    { left: "$", right: "$", display: false },
+  ],
+  throwOnError: false,                 // bad LaTeX shows as red source, never crashes
+  ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+};
+let mathPending = false;
+function typesetMath(root) {
+  const el = root || app;
+  if (!el) return;
+  if (window.renderMathInElement) {
+    try { window.renderMathInElement(el, KATEX_OPTS); } catch {}
+  } else {
+    mathPending = true; // KaTeX not ready yet — retry on window load
+  }
+}
+window.addEventListener("load", () => { if (mathPending) { mathPending = false; typesetMath(app); } });
+
 // Difficulty + count for flashcards / quizzes (stored per-device).
 const getDifficulty = () => { try { return localStorage.getItem("recall_difficulty") || "Medium"; } catch { return "Medium"; } };
 const setDifficulty = (d) => { try { localStorage.setItem("recall_difficulty", d); } catch {} };
@@ -446,6 +475,7 @@ function renderView() {
   else if (state.view === "note") { main.innerHTML = noteHTML(); wireNote(); }
   else if (state.view === "ask") { main.innerHTML = askHTML(); wireAsk(); }
   else if (state.view === "admin") { main.innerHTML = adminHTML(); wireAdmin(); }
+  typesetMath(main);
 }
 
 // ── Access gate (pending / blocked / loading) ────────────────────────────────
@@ -1358,6 +1388,7 @@ function renderNotePanel() {
   else if (tab === "podcast") { p.innerHTML = podcastTabHTML(); wirePodcast(); }
   else if (tab === "chat") { p.innerHTML = `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`; loadAndRenderChat(); }
   if (tab === "notes") wireNotesTab();
+  typesetMath(p);
 }
 
 // Notes tab
@@ -1496,6 +1527,7 @@ function openExplainer({ heading, seedQuestion, seedLabel }) {
       history.push({ role: "user", content: question }, { role: "assistant", content: ans });
       if (history.length > 20) history.splice(0, history.length - 20);
       pending.innerHTML = `<div class="prose">${mdToHtml(ans)}</div>`;
+      typesetMath(pending);
     } catch (err) {
       pending.innerHTML = `<span style="color:var(--bad)">${escapeHtml(err.message)}</span>`;
     }
@@ -2109,6 +2141,7 @@ async function loadAndRenderChat() {
     </form>
   </div>`;
   const scroll = $("#chat-scroll"); scroll.scrollTop = scroll.scrollHeight;
+  typesetMath(p);
   $("#chat-form").onsubmit = onChatSubmit;
   $("#chat-input").focus();
 }
@@ -2140,6 +2173,7 @@ async function onChatSubmit(e) {
     const aMsg = { role: "assistant", content: result };
     state.chat.push(aMsg);
     scroll.insertAdjacentHTML("beforeend", chatMsgHTML(aMsg));
+    typesetMath(scroll);
     scroll.scrollTop = scroll.scrollHeight;
     addChat(state.current.id, "assistant", result).catch(() => {});
   } catch (err) {
@@ -2303,7 +2337,7 @@ async function submitAsk() {
     const msg = { role: "assistant", content: answer, sources: sources.map(({ n, id, title }) => ({ n, id, title })) };
     askThread.push(msg);
     const sc = $("#ask-scroll");
-    if (sc) { sc.insertAdjacentHTML("beforeend", askMsgHTML(msg)); sc.scrollTop = sc.scrollHeight; }
+    if (sc) { sc.insertAdjacentHTML("beforeend", askMsgHTML(msg)); typesetMath(sc); sc.scrollTop = sc.scrollHeight; }
   } catch (err) {
     $("#ask-pending")?.remove();
     toast(err.message, "error");
