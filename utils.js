@@ -24,7 +24,7 @@ export function titleFromMarkdown(md, fallback = "Untitled note") {
 export const safeName = (s) => (s || "note").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "note";
 
 // Labels for a note's capture source.
-export const sourceLabel = { record: "Recording", paste: "Pasted", youtube: "YouTube", image: "Photos", file: "File" };
+export const sourceLabel = { record: "Recording", paste: "Pasted", youtube: "YouTube", image: "Photos", file: "File", link: "Web" };
 
 // Download a text file (one-shot <a download> click).
 export function downloadText(text, filename, type = "text/markdown") {

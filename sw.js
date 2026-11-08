@@ -2,7 +2,7 @@
 // App-shell caching so the app launches offline. Never caches /api/* (those
 // always need the network) or Supabase requests. Static assets: stale-while-
 // revalidate. Navigations: network-first, falling back to the cached shell.
-const VERSION = "recall-v35";
+const VERSION = "recall-v36";
 const CORE = [
   "./",
   "index.html",
@@ -39,9 +39,10 @@ self.addEventListener("fetch", (e) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
 
-  // API + Supabase + Google (Drive/Picker/auth): always network, never cache.
+  // API + Supabase + Google (Drive/Picker/auth) + reader service: always network, never cache.
   if (url.pathname.startsWith("/api/") || url.hostname.endsWith("supabase.co")
-      || url.hostname.endsWith("googleapis.com") || url.hostname.endsWith("google.com") || url.hostname.endsWith("gstatic.com")) return;
+      || url.hostname.endsWith("googleapis.com") || url.hostname.endsWith("google.com") || url.hostname.endsWith("gstatic.com")
+      || url.hostname.endsWith("jina.ai")) return;
 
   // Navigations: network first, fall back to the cached shell (offline launch).
   if (request.mode === "navigate") {

@@ -46,13 +46,14 @@ const state = {
   streakGained: false,
   current: null,            // full note object
   noteTab: "notes",         // notes | flashcards | quiz | chat
-  captureMode: "record",    // record | paste | youtube
+  captureMode: "record",    // record | paste | youtube | image | file | link
   transcript: "",           // captured raw text
   sourceType: "record",
   sourceRef: null,
   ytTitle: "",
   ytManual: "",             // YouTube transcript (fetched or pasted)
   ytStatus: "",
+  linkUrl: "",              // URL for the Web-link capture mode
   images: [],               // picked photos for the Photo capture mode
   files: [],                // picked files (PDF/text) for the Files capture mode
   fc: { order: [], i: 0, flipped: false },
@@ -835,8 +836,8 @@ function wireAdmin() {
 // ── Capture ──────────────────────────────────────────────────────────────────
 function captureHTML() {
   const mode = state.captureMode;
-  const seg = ["record", "paste", "youtube", "image", "file"].map((m) =>
-    `<button data-mode="${m}" class="${m === mode ? "active" : ""}">${{ record: "🎙 Record", paste: "📄 Paste", youtube: "▶ YouTube", image: "📷 Photo", file: "📎 Files" }[m]}</button>`).join("");
+  const seg = ["record", "paste", "youtube", "image", "file", "link"].map((m) =>
+    `<button data-mode="${m}" class="${m === mode ? "active" : ""}">${{ record: "🎙 Record", paste: "📄 Paste", youtube: "▶ YouTube", image: "📷 Photo", file: "📎 Files", link: "🔗 Web link" }[m]}</button>`).join("");
 
   let body = "";
   if (mode === "record") {
@@ -869,7 +870,7 @@ function captureHTML() {
         <div class="dz-sub">Textbook pages, slides, handwriting, diagrams — add several, I'll read them all.</div>
       </label>
       ${state.images.length ? `<div class="imggrid">${thumbs}</div>` : ""}`;
-  } else {
+  } else if (mode === "file") {
     const items = state.files.map((f, i) =>
       `<div class="filechip"><span class="fc-ic">${f.kind === "pdf" ? "📕" : "📄"}</span><span class="fc-name">${escapeHtml(f.name)}</span><span class="fc-size">${fmtSize(f.size)}</span><button class="filerm" data-i="${i}" title="Remove" aria-label="Remove">✕</button></div>`).join("");
     body = `<label class="dropzone" id="filedrop">
@@ -880,11 +881,18 @@ function captureHTML() {
       </label>
       ${driveEnabled() ? `<button class="btn btn-outline drive-btn" id="drive-btn" type="button">📁 Import from Google Drive</button>` : ""}
       ${state.files.length ? `<div class="filelist">${items}</div>` : ""}`;
+  } else if (mode === "link") {
+    body = `<label class="field-label" style="display:block;margin-bottom:6px">Web link</label>
+      <input class="input" id="link-url" type="url" inputmode="url" autocomplete="off"
+        placeholder="https://en.wikipedia.org/wiki/Photosynthesis" value="${escapeHtml(state.linkUrl || "")}" />
+      <p style="color:var(--muted);margin:10px 0 4px;font-size:.9rem">Paste an article, documentation page, or blog post and press <strong>Read &amp; make notes</strong>. Recall fetches the page, reads it, and turns it into clean study notes.</p>
+      <p style="color:var(--muted);margin:2px 0 0;font-size:.82rem">The page is fetched through a reader service, so only use public pages — not anything behind a login or paywall. Some sites block automated reading; if one does, open it and use <strong>Paste</strong> instead.</p>`;
   }
 
   const canTurbo = state.transcript.trim().length > 0 || mode === "paste" || mode === "youtube"
-    || (mode === "image" && state.images.length > 0) || (mode === "file" && state.files.length > 0);
-  const turboLabel = mode === "youtube" ? "✺ Make lesson" : (mode === "image" || mode === "file") ? "✺ Read & make notes" : "✺ Turbo it";
+    || (mode === "image" && state.images.length > 0) || (mode === "file" && state.files.length > 0)
+    || (mode === "link" && (state.linkUrl || "").trim().length > 0);
+  const turboLabel = mode === "youtube" ? "✺ Make lesson" : (mode === "image" || mode === "file") ? "✺ Read & make notes" : mode === "link" ? "✺ Read & make notes" : "✺ Turbo it";
   return `<div class="capture">
     <div class="note-head" style="margin-bottom:18px">
       <button class="btn btn-icon btn-ghost" id="back" aria-label="Back">←</button>
@@ -920,6 +928,15 @@ function wireCapture() {
   $$(".filerm").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); state.files.splice(+b.dataset.i, 1); renderView(); }));
   const driveBtn = $("#drive-btn");
   if (driveBtn) driveBtn.onclick = importFromDrive;
+
+  const linkUrl = $("#link-url");
+  if (linkUrl) {
+    linkUrl.oninput = () => {
+      state.linkUrl = linkUrl.value;
+      const t = $("#turbo"); if (t) t.disabled = !linkUrl.value.trim();
+    };
+    linkUrl.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); runTurbo(); } };
+  }
 
   const turbo = $("#turbo");
   if (turbo) turbo.onclick = runTurbo;
@@ -1181,6 +1198,41 @@ function stopRecognition() {
   if (recognition) { try { recognition.stop(); } catch {} recognition = null; }
 }
 
+// ── Web link → readable text ──────────────────────────────────────────────────
+// Add a protocol if the user typed a bare domain, and reject obvious non-URLs.
+function normalizeUrl(raw) {
+  let u = (raw || "").trim();
+  if (!u) return "";
+  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+  try { const parsed = new URL(u); if (!parsed.hostname.includes(".")) return ""; return parsed.href; }
+  catch { return ""; }
+}
+
+// Strip a raw HTML document down to its readable text (fallback path only).
+function htmlToText(html) {
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    doc.querySelectorAll("script,style,noscript,svg,header,footer,nav,aside,form,iframe").forEach((e) => e.remove());
+    const main = doc.querySelector("article") || doc.querySelector("main") || doc.body;
+    return ((main && main.textContent) || "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  } catch { return ""; }
+}
+
+// Fetch a public web page as clean text. A browser can't read most sites directly
+// (CORS), so we use a reader service (r.jina.ai) that returns article-only
+// Markdown with open CORS, and fall back to a direct fetch for sites that allow it.
+async function fetchPageText(url) {
+  try {
+    const r = await fetch("https://r.jina.ai/" + url, { headers: { Accept: "text/plain" } });
+    if (r.ok) { const t = (await r.text()).trim(); if (t.length > 200) return t.slice(0, 200_000); }
+  } catch {}
+  try {
+    const r = await fetch(url);
+    if (r.ok) { const t = htmlToText(await r.text()); if (t.length > 200) return t.slice(0, 200_000); }
+  } catch {}
+  throw new Error("Couldn't read that page. Some sites block automated reading — open it and use Paste instead.");
+}
+
 // ── Turbo: transcript → notes/lesson → new note ──────────────────────────────
 async function runTurbo() {
   const mode = state.captureMode;
@@ -1210,6 +1262,18 @@ async function runTurbo() {
     if (manual) { task = "lesson"; payload = { source: manual }; transcript = manual; busyLabel = "Building your lesson…"; }
     else if (url) { task = "video"; payload = { videoUrl: url }; busyLabel = "Watching the video…"; }
     else { toast("Paste a YouTube link (or a transcript) first.", "error"); return; }
+  } else if (mode === "link") {
+    const url = normalizeUrl($("#link-url")?.value || state.linkUrl || "");
+    if (!url) { toast("Paste a valid web link first.", "error"); return; }
+    state.sourceRef = url;
+    busy(true, "Fetching the page…");
+    busyNoteSet("Reading the page — this can take a few seconds for a long article.");
+    try {
+      const pageText = await fetchPageText(url);
+      task = "notes"; payload = { source: pageText }; transcript = pageText; busyLabel = "Turbo is reading the page…";
+    } catch (err) {
+      busy(false); toast(err.message, "error"); return;
+    }
   } else {
     const source = mode === "paste" ? ($("#paste-area")?.value || "").trim() : state.transcript.trim();
     if (!source) { toast("Add some material first.", "error"); return; }
@@ -1225,7 +1289,7 @@ async function runTurbo() {
     const notes_md = await aiGenerate(task, payload);
     const note = await createNote({
       title: titleFromMarkdown(notes_md, state.ytTitle || "Untitled note"),
-      source_type: mode === "file" ? "file" : mode === "image" ? "image" : isYouTube ? "youtube" : (mode === "record" ? "record" : "paste"),
+      source_type: mode === "file" ? "file" : mode === "image" ? "image" : mode === "link" ? "link" : isYouTube ? "youtube" : (mode === "record" ? "record" : "paste"),
       source_ref: state.sourceRef || null,
       transcript,
       notes_md,
@@ -1233,7 +1297,7 @@ async function runTurbo() {
       quiz: [],
     });
     // reset capture state
-    state.transcript = ""; state.sourceRef = null; state.ytTitle = ""; state.ytManual = ""; state.ytStatus = ""; state.images = []; state.files = [];
+    state.transcript = ""; state.sourceRef = null; state.ytTitle = ""; state.ytManual = ""; state.ytStatus = ""; state.images = []; state.files = []; state.linkUrl = "";
     openNoteObject(note);
     toast(praise(), "success");
     confetti();
