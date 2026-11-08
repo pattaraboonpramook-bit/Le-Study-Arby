@@ -1,30 +1,30 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    Recall — styles
-   Warm ivory surfaces, ICONSIAM champagne-gold accent, light + dark themes.
+   Cool off-white surfaces, ocean-blue accent, light + dark themes.
    ═══════════════════════════════════════════════════════════════════════════ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* Light (default) — warm ivory + ICONSIAM champagne gold */
-  --bg:          #f7f3e9;
-  --bg-2:        #efe8d7;
+  /* Light (default) — cool off-white + ocean blue */
+  --bg:          #f6f8fc;
+  --bg-2:        #eaf0f8;
   --surface:     #ffffff;
-  --surface-2:   #f5f0e3;
-  --border:      rgba(45,36,12,0.13);
-  --border-2:    rgba(45,36,12,0.06);
-  --text:        #231e12;
-  --text-2:      #5e5536;
-  --muted:       #8e8464;
-  --accent:      #8e6d14;
+  --surface-2:   #eef3fb;
+  --border:      rgba(21,41,82,0.13);
+  --border-2:    rgba(21,41,82,0.06);
+  --text:        #15203a;
+  --text-2:      #44536e;
+  --muted:       #7a869c;
+  --accent:      #2563eb;
   --accent-ink:  #ffffff;
-  --accent-weak: rgba(142,109,20,0.13);
-  --accent-2:    #b8902b;
-  --good:        #3f8f6b;
-  --good-weak:   rgba(63,143,107,0.13);
-  --bad:         #c0503f;
-  --bad-weak:    rgba(192,80,63,0.12);
-  --shadow:      0 6px 22px rgba(45,36,12,0.10);
-  --shadow-lg:   0 18px 48px rgba(45,36,12,0.17);
+  --accent-weak: rgba(37,99,235,0.12);
+  --accent-2:    #0ea5c4;
+  --good:        #159b6f;
+  --good-weak:   rgba(21,155,111,0.13);
+  --bad:         #d1534a;
+  --bad-weak:    rgba(209,83,74,0.12);
+  --shadow:      0 6px 22px rgba(21,41,82,0.10);
+  --shadow-lg:   0 18px 48px rgba(21,41,82,0.17);
   --radius:      16px;
   --radius-sm:   10px;
   --font-body:   'Inter', system-ui, -apple-system, sans-serif;
@@ -32,35 +32,35 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    /* Dark — deep espresso + bright champagne gold (the ICONSIAM hero look) */
-    --bg:          #121009;
-    --bg-2:        #18150c;
-    --surface:     #1e1a0f;
-    --surface-2:   #2a2415;
-    --border:      rgba(232,214,160,0.13);
-    --border-2:    rgba(232,214,160,0.05);
-    --text:        #f3ecd9;
-    --text-2:      #c7ba95;
-    --muted:       #978c6e;
-    --accent:      #d9b24a;
-    --accent-ink:  #171205;
-    --accent-weak: rgba(217,178,74,0.16);
-    --accent-2:    #e6c86b;
-    --good:        #6cbf94;
-    --good-weak:   rgba(108,191,148,0.15);
-    --bad:         #e58c7c;
-    --bad-weak:    rgba(229,140,124,0.15);
+    /* Dark — deep navy + bright sky blue */
+    --bg:          #0b1020;
+    --bg-2:        #0f1628;
+    --surface:     #141c30;
+    --surface-2:   #1d2740;
+    --border:      rgba(150,180,230,0.14);
+    --border-2:    rgba(150,180,230,0.06);
+    --text:        #e8eef9;
+    --text-2:      #aebdd6;
+    --muted:       #7f8ca6;
+    --accent:      #60a5fa;
+    --accent-ink:  #081225;
+    --accent-weak: rgba(96,165,250,0.16);
+    --accent-2:    #38bdf8;
+    --good:        #5fd1a0;
+    --good-weak:   rgba(95,209,160,0.15);
+    --bad:         #ef8d82;
+    --bad-weak:    rgba(239,141,130,0.15);
     --shadow:      0 8px 28px rgba(0,0,0,0.50);
     --shadow-lg:   0 20px 52px rgba(0,0,0,0.62);
   }
 }
 :root[data-theme="dark"] {
-  --bg:#121009; --bg-2:#18150c; --surface:#1e1a0f; --surface-2:#2a2415;
-  --border:rgba(232,214,160,0.13); --border-2:rgba(232,214,160,0.05);
-  --text:#f3ecd9; --text-2:#c7ba95; --muted:#978c6e;
-  --accent:#d9b24a; --accent-ink:#171205; --accent-weak:rgba(217,178,74,0.16);
-  --accent-2:#e6c86b; --good:#6cbf94; --good-weak:rgba(108,191,148,0.15);
-  --bad:#e58c7c; --bad-weak:rgba(229,140,124,0.15);
+  --bg:#0b1020; --bg-2:#0f1628; --surface:#141c30; --surface-2:#1d2740;
+  --border:rgba(150,180,230,0.14); --border-2:rgba(150,180,230,0.06);
+  --text:#e8eef9; --text-2:#aebdd6; --muted:#7f8ca6;
+  --accent:#60a5fa; --accent-ink:#081225; --accent-weak:rgba(96,165,250,0.16);
+  --accent-2:#38bdf8; --good:#5fd1a0; --good-weak:rgba(95,209,160,0.15);
+  --bad:#ef8d82; --bad-weak:rgba(239,141,130,0.15);
   --shadow:0 8px 28px rgba(0,0,0,0.50); --shadow-lg:0 20px 52px rgba(0,0,0,0.62);
 }
 
@@ -558,12 +558,12 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 /* ═══════════════════════════════════════════════════════════════════════════
    Energy layer — vibrant gradients, progression UI, ambient motion
    ═══════════════════════════════════════════════════════════════════════════ */
-:root { --grad-accent: linear-gradient(135deg, #e6c45f 0%, #d4af37 45%, #bf9324 100%); }
+:root { --grad-accent: linear-gradient(135deg, #4f8bff 0%, #2f6bff 50%, #22b6d8 100%); }
 
-/* Vibrant primary actions — bright champagne gold with dark ink (ICONSIAM look) */
-.btn-primary { background: var(--grad-accent); color: #241c06; }
-.btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px color-mix(in srgb, #caa12e 42%, transparent); }
-.turbo-btn { background: var(--grad-accent) !important; color: #241c06; box-shadow: 0 10px 26px color-mix(in srgb, #caa12e 36%, transparent); }
+/* Vibrant primary actions — ocean blue -> cyan with white ink */
+.btn-primary { background: var(--grad-accent); color: #ffffff; }
+.btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px color-mix(in srgb, #2f6bff 42%, transparent); }
+.turbo-btn { background: var(--grad-accent) !important; color: #ffffff; box-shadow: 0 10px 26px color-mix(in srgb, #2f6bff 36%, transparent); }
 .turbo-btn:hover:not(:disabled) { transform: translateY(-2px); }
 
 /* Animated brand mark */
@@ -576,13 +576,13 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .bg-orbs { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .bg-orbs span { position: absolute; border-radius: 50%; filter: blur(72px); }
 .bg-orbs span:first-child { width: 44vw; height: 44vw; left: -12vw; top: -10vw;
-  background: radial-gradient(circle, rgba(201,162,39,0.30), transparent 70%); animation: drift-a 22s ease-in-out infinite alternate; }
+  background: radial-gradient(circle, rgba(47,107,255,0.24), transparent 70%); animation: drift-a 22s ease-in-out infinite alternate; }
 .bg-orbs span:last-child { width: 40vw; height: 40vw; right: -14vw; bottom: -14vw;
-  background: radial-gradient(circle, rgba(184,144,43,0.26), transparent 70%); animation: drift-b 27s ease-in-out infinite alternate; }
+  background: radial-gradient(circle, rgba(34,182,216,0.22), transparent 70%); animation: drift-b 27s ease-in-out infinite alternate; }
 @keyframes drift-a { to { transform: translate(6vw, 8vh) scale(1.12); } }
 @keyframes drift-b { to { transform: translate(-5vw, -6vh) scale(1.16); } }
-:root:not([data-theme="light"]) .bg-orbs span:first-child { background: radial-gradient(circle, rgba(217,178,74,0.22), transparent 70%); }
-:root:not([data-theme="light"]) .bg-orbs span:last-child { background: radial-gradient(circle, rgba(200,150,50,0.18), transparent 70%); }
+:root:not([data-theme="light"]) .bg-orbs span:first-child { background: radial-gradient(circle, rgba(96,165,250,0.20), transparent 70%); }
+:root:not([data-theme="light"]) .bg-orbs span:last-child { background: radial-gradient(circle, rgba(56,189,248,0.16), transparent 70%); }
 
 /* XP / level chip in the top bar */
 .xp-chip { display: flex; align-items: center; gap: 8px; padding: 5px 13px 5px 5px; border-radius: 999px;
@@ -605,7 +605,7 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .stats-close:hover { background: var(--border); }
 .stats-hero { display: flex; align-items: center; gap: 20px; margin-bottom: 22px; flex-wrap: wrap; }
 .big-ring { --pct: 0; width: 104px; height: 104px; border-radius: 50%; display: grid; place-content: center; flex-shrink: 0;
-  background: conic-gradient(from -90deg, #bf9324, #d4af37, #e6c86b calc(var(--pct) * 1%), var(--surface-2) 0); }
+  background: conic-gradient(from -90deg, #2f6bff, #4f8bff, #22b6d8 calc(var(--pct) * 1%), var(--surface-2) 0); }
 .big-ring-in { width: 82px; height: 82px; border-radius: 50%; background: var(--surface); display: grid; place-content: center; text-align: center; }
 .big-lvl { font-family: var(--font-display); font-weight: 700; font-size: 1.9rem; line-height: 1; }
 .big-ring-in small { font-size: .58rem; letter-spacing: .16em; color: var(--muted); }
