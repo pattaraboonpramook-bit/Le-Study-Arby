@@ -588,7 +588,7 @@ function wireTopbar() {
       `<button id="menu-export">⬇ Back up my notes</button>
        <button id="menu-import">⬆ Restore from backup</button>` +
       (backend === "cloud" ? `<button id="menu-migrate">⤴ Import notes from this device</button>` : "") +
-      (installEvent ? `<button id="menu-install">⬇ Install app</button>` : "") +
+      (canOfferInstall() ? `<button id="menu-install">⬇ Install app</button>` : "") +
       (backend === "local"
         ? `<button id="menu-clear" class="btn-danger">🗑 Clear local data</button>`
         : `<button id="menu-signout" class="btn-danger">⎋ Sign out</button>`);
@@ -605,7 +605,11 @@ function wireTopbar() {
     $("#menu-export").onclick = () => { menu.remove(); exportData(); };
     $("#menu-import").onclick = () => { menu.remove(); pickImportFile(); };
     if (backend === "cloud") { const m = $("#menu-migrate"); if (m) m.onclick = () => { menu.remove(); migrateFromDevice(); }; }
-    if (installEvent) $("#menu-install").onclick = async () => { menu.remove(); installEvent.prompt(); installEvent = null; };
+    if (canOfferInstall()) $("#menu-install").onclick = async () => {
+      menu.remove();
+      if (installEvent) { installEvent.prompt(); try { await installEvent.userChoice; } catch {} installEvent = null; }
+      else showIOSInstallGuide();
+    };
     if (backend === "local") {
       $("#menu-clear").onclick = () => {
         menu.remove();
@@ -2557,10 +2561,82 @@ async function goLibrary() {
   } catch (err) { toast(err.message, "error"); state.notes = []; renderView(); }
 }
 
+// ── Install / "Add to Home Screen" ───────────────────────────────────────────
+// Android & desktop Chromium fire `beforeinstallprompt`, so we can show a real
+// one-tap Install button. iOS/iPadOS never fire it: there, installing is a
+// manual Safari flow (Share → Add to Home Screen), so we show a how-to instead.
+
+// Already running as an installed app? Then hide every install affordance.
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+// iPhone / iPad / iPod — including iPadOS 13+, which reports itself as a Mac with a touchscreen.
+function isIOS() {
+  const ua = navigator.userAgent || "";
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
+}
+// On iOS, Add to Home Screen exists only in Safari — not Chrome/Firefox/Edge for iOS.
+function isIOSSafari() {
+  return isIOS() && !/CriOS|FxiOS|EdgiOS|OPiOS|mercury/i.test(navigator.userAgent || "");
+}
+// Offer an install option when we can prompt (Chromium) or when it's iOS (manual flow).
+function canOfferInstall() {
+  return !isStandalone() && (!!installEvent || isIOS());
+}
+
+// Step-by-step overlay for iOS/iPadOS, where there's no programmatic install.
+function showIOSInstallGuide() {
+  const safari = isIOSSafari();
+  const share = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="Share" style="vertical-align:-4px"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>`;
+  const o = document.createElement("div");
+  o.className = "stats-overlay";
+  o.id = "ios-install";
+  o.innerHTML = `<div class="stats-card" style="max-width:420px">
+    <button class="stats-close" id="ios-close" aria-label="Close">✕</button>
+    <h2 class="stats-h" style="font-size:1.3rem;margin-bottom:6px">Install Recall on your ${isIOS() && /iPad|Macintosh/.test(navigator.userAgent) ? "iPad" : "iPhone"}</h2>
+    ${safari
+      ? `<p style="color:var(--text-2);margin-bottom:18px">Add Recall to your Home Screen and it opens like a real app — full screen, its own icon, and it still works offline.</p>
+         <ol class="ios-steps">
+           <li><span class="ios-step-n">1</span><span>Tap the <strong>Share</strong> button ${share} in Safari's toolbar — it's at the <strong>top</strong> on iPad, the <strong>bottom</strong> on iPhone.</span></li>
+           <li><span class="ios-step-n">2</span><span>Scroll down the list and tap <strong>Add to Home Screen</strong>.</span></li>
+           <li><span class="ios-step-n">3</span><span>Tap <strong>Add</strong> — Recall now lives on your Home Screen.</span></li>
+         </ol>`
+      : `<p style="color:var(--text-2);margin-bottom:16px">On iPhone and iPad, installing a web app only works in <strong>Safari</strong> — other browsers can't do it.</p>
+         <ol class="ios-steps">
+           <li><span class="ios-step-n">1</span><span>Open <strong>Safari</strong> and go to <strong>le-study-arby.vercel.app</strong>.</span></li>
+           <li><span class="ios-step-n">2</span><span>Tap the <strong>Share</strong> button ${share}, then <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</span></li>
+         </ol>`}
+  </div>`;
+  document.body.appendChild(o);
+  const close = () => o.remove();
+  $("#ios-close").onclick = close;
+  o.addEventListener("click", (e) => { if (e.target === o) close(); });
+}
+
+// A gentle, one-time nudge on iOS so people discover the Home-Screen install.
+function maybeShowInstallHint() {
+  try {
+    if (isStandalone() || !isIOS()) return;
+    if (localStorage.getItem("recall_a2hs_dismissed")) return;
+  } catch { return; }
+  const b = document.createElement("div");
+  b.className = "a2hs-banner";
+  b.innerHTML = `<span class="a2hs-ic">📲</span>
+    <p>Install Recall on your Home Screen for a full-screen, app-like experience.</p>
+    <button class="a2hs-go" id="a2hs-go">How</button>
+    <button class="a2hs-x" id="a2hs-x" aria-label="Dismiss">✕</button>`;
+  const dismiss = () => { b.remove(); try { localStorage.setItem("recall_a2hs_dismissed", "1"); } catch {} };
+  document.body.appendChild(b);
+  $("#a2hs-go").onclick = () => { dismiss(); showIOSInstallGuide(); };
+  $("#a2hs-x").onclick = dismiss;
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 //  BOOTSTRAP
 // ═════════════════════════════════════════════════════════════════════════════
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvent = e; });
+window.addEventListener("appinstalled", () => { installEvent = null; try { localStorage.setItem("recall_a2hs_dismissed", "1"); } catch {} });
+window.addEventListener("load", () => setTimeout(maybeShowInstallHint, 2500));
 
 if ("serviceWorker" in navigator) {
   // When a new version takes over, reload once so the user always gets the latest.

@@ -625,6 +625,25 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .ach-desc { font-size: .76rem; color: var(--text-2); line-height: 1.4; }
 @media (max-width: 460px) { .ach-grid { grid-template-columns: 1fr; } }
 
+/* Install / Add-to-Home-Screen: how-to steps + one-time hint banner */
+.ios-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.ios-steps li { display: flex; align-items: flex-start; gap: 12px; line-height: 1.5; color: var(--text); }
+.ios-steps strong { color: var(--text); font-weight: 700; }
+.ios-steps svg { color: var(--accent); margin: 0 1px; }
+.ios-step-n { flex: 0 0 26px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
+  display: grid; place-content: center; font-weight: 700; font-size: .85rem; margin-top: 1px; }
+.a2hs-banner { position: fixed; left: 50%; transform: translateX(-50%); z-index: 1200;
+  bottom: calc(16px + env(safe-area-inset-bottom)); width: min(460px, calc(100vw - 24px));
+  display: flex; align-items: center; gap: 10px; padding: 11px 13px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-lg);
+  animation: mpRise .3s cubic-bezier(.22,1,.36,1) both; }
+.a2hs-banner .a2hs-ic { font-size: 1.3rem; flex-shrink: 0; }
+.a2hs-banner p { margin: 0; flex: 1; font-size: .86rem; line-height: 1.4; color: var(--text); }
+.a2hs-banner .a2hs-go { flex-shrink: 0; padding: 7px 14px; border-radius: 999px; font-weight: 700; font-size: .84rem;
+  background: var(--accent); color: var(--accent-ink); }
+.a2hs-banner .a2hs-x { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; color: var(--text-2); font-size: .9rem; }
+.a2hs-banner .a2hs-x:hover { background: var(--surface-2); }
+
 /* Language chooser (translate) */
 .lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .lang-opt { padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2);
