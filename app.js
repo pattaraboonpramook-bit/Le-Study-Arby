@@ -59,6 +59,7 @@ const state = {
   fc: { order: [], i: 0, flipped: false },
   quiz: { answers: {} },
   chat: null,               // loaded lazily
+  quizChat: [],             // in-memory quiz-tutor chat for the open note
   feynman: null,            // teach-back result
   feynmanText: "",          // teach-back explanation draft
   podcastScript: null,      // [{speaker,text}] audio-overview script
@@ -374,6 +375,10 @@ function typesetMath(root) {
   }
 }
 window.addEventListener("load", () => { if (mathPending) { mathPending = false; typesetMath(app); } });
+
+// Per-note quiz "focus" — free-text context that steers quiz generation. Per-device.
+const getQuizCtx = (id) => { try { return localStorage.getItem("recall_quizctx_" + id) || ""; } catch { return ""; } };
+const setQuizCtx = (id, s) => { try { const v = (s || "").slice(0, 1000); if (v.trim()) localStorage.setItem("recall_quizctx_" + id, v); else localStorage.removeItem("recall_quizctx_" + id); } catch {} };
 
 // Difficulty + count for flashcards / quizzes (stored per-device).
 const getDifficulty = () => { try { return localStorage.getItem("recall_difficulty") || "Medium"; } catch { return "Medium"; } };
@@ -1334,6 +1339,7 @@ function openNoteObject(note) {
   state.fc = { order: srsOrder(note.id, note.flashcards || []), i: 0, flipped: false };
   state.quiz = { answers: {} };
   state.chat = null;
+  state.quizChat = [];
   state.feynman = null;
   state.feynmanText = "";
   state.podcastScript = getPodcastLS(note.id);
@@ -1826,10 +1832,21 @@ async function generateFlashcards() {
 }
 
 // Quiz tab
+// A collapsible "focus" box: free-text context that steers the next quiz.
+function quizFocusHTML(id) {
+  const ctx = getQuizCtx(id);
+  return `<details class="quiz-focus"${ctx ? " open" : ""}>
+    <summary>🎯 Focus / context${ctx ? " ✓" : " (optional)"}</summary>
+    <textarea class="input" id="quiz-ctx" rows="2" placeholder="Tell the quiz what to focus on — e.g. “Only chapter 3; test dates and names, not definitions; add questions on the causes of the Revolution.”">${escapeHtml(ctx)}</textarea>
+    <p class="quiz-focus-hint">Used when you press <strong>New quiz</strong>. Saved for this note.</p>
+  </details>`;
+}
+
 function quizTabHTML() {
   const quiz = state.current.quiz || [];
   if (quiz.length === 0) {
-    return toolsBar("quiz") + genCTA("❓", "No quiz yet", "Generate a practice quiz from your notes.", "gen-quiz", "Generate quiz");
+    return toolsBar("quiz") + quizFocusHTML(state.current.id)
+      + genCTA("❓", "No quiz yet", "Generate a practice quiz from your notes.", "gen-quiz", "Generate quiz");
   }
   const answered = state.quiz.answers;
   const done = Object.keys(answered).length === quiz.length;
@@ -1861,8 +1878,29 @@ function quizTabHTML() {
         <button class="btn btn-primary btn-sm" id="quiz-retake">↻ Retake</button></div>`
     : "";
 
-  return toolsBar("quiz") + `<div class="panel quiz">${quizHistLine(state.current.id)}${cards}${scoreCard}
-    <div style="text-align:center"><button class="btn btn-outline btn-sm" id="regen-quiz">↻ New quiz</button></div></div>`;
+  return toolsBar("quiz") + quizFocusHTML(state.current.id) + `<div class="panel quiz">${quizHistLine(state.current.id)}${cards}${scoreCard}
+    <div style="text-align:center"><button class="btn btn-outline btn-sm" id="regen-quiz">↻ New quiz</button></div></div>`
+    + quizChatHTML();
+}
+
+// A quiz tutor chat: discuss the questions and your answers, ask why something's
+// right, or ask for more practice. In-memory for the session; knows the quiz +
+// your answers + the note material + your focus text.
+function quizChatHTML() {
+  const msgs = state.quizChat && state.quizChat.length
+    ? state.quizChat.map(quizChatMsgHTML).join("")
+    : `<div class="chat-empty">Ask about any question or your answers — “Why is Q3 B?”, “Explain the ones I got wrong”, or “Give me 3 harder questions on this.”</div>`;
+  return `<div class="panel quiz-chat">
+    <div class="quiz-chat-h">💬 Quiz tutor</div>
+    <div class="chat-scroll" id="quizchat-scroll">${msgs}</div>
+    <form class="chat-form" id="quizchat-form">
+      <input class="input" id="quizchat-input" placeholder="Ask about the quiz, or add context…" autocomplete="off" />
+      <button class="btn btn-primary" type="submit" aria-label="Send">↑</button>
+    </form>
+  </div>`;
+}
+function quizChatMsgHTML(m) {
+  return `<div class="msg ${m.role}">${m.role === "assistant" ? `<div class="prose">${mdToHtml(m.content)}</div>` : escapeHtml(m.content)}</div>`;
 }
 // A compact history strip of past attempts on this quiz (persisted per device).
 function quizHistLine(id) {
@@ -1876,6 +1914,10 @@ function wireQuiz() {
   $$(".diff-opt").forEach((b) => (b.onclick = () => { setDifficulty(b.dataset.diff); renderNotePanel(); }));
   $$(".num-opt").forEach((b) => (b.onclick = () => { setCount(b.dataset.kind, +b.dataset.count); renderNotePanel(); }));
   $$(".q-why").forEach((b) => (b.onclick = () => explainQuizQuestion(+b.dataset.q)));
+  // Focus box is present in both the empty and the has-quiz states — bind it
+  // before the no-quiz early return below.
+  const ctx = $("#quiz-ctx");
+  if (ctx) ctx.oninput = () => setQuizCtx(state.current.id, ctx.value);
   const g = $("#gen-quiz"); if (g) { g.onclick = () => generateQuiz(); return; }
   $$(".q-opt").forEach((b) => (b.onclick = () => {
     const qi = +b.dataset.q;
@@ -1896,12 +1938,64 @@ function wireQuiz() {
   }));
   const rt = $("#quiz-retake"); if (rt) rt.onclick = () => { state.quiz = { answers: {} }; renderNotePanel(); };
   const rq = $("#regen-quiz"); if (rq) rq.onclick = () => generateQuiz();
+
+  const qcf = $("#quizchat-form");
+  if (qcf) {
+    qcf.onsubmit = onQuizChatSubmit;
+    const sc = $("#quizchat-scroll"); if (sc) sc.scrollTop = sc.scrollHeight;
+  }
+}
+
+// Build the context the quiz tutor sees: the note material, every question with
+// its options / correct answer / the student's pick, and the student's focus.
+function buildQuizChatContext() {
+  const n = state.current;
+  const material = (n.notes_md || n.transcript || "").slice(0, 12000);
+  const quiz = n.quiz || [];
+  const ans = (state.quiz && state.quiz.answers) || {};
+  const L = (i) => String.fromCharCode(65 + i);
+  const qText = quiz.map((q, i) => {
+    const chosen = ans[i] !== undefined ? `${L(ans[i])}) ${q.options[ans[i]]}` : "(not answered)";
+    const opts = q.options.map((o, oi) => `${L(oi)}) ${o}`).join("   ");
+    return `Q${i + 1}. ${q.question}\n   Options: ${opts}\n   Correct: ${L(q.answer)}) ${q.options[q.answer]}\n   Student chose: ${chosen}${q.explanation ? `\n   Explanation: ${q.explanation}` : ""}`;
+  }).join("\n\n");
+  const focus = getQuizCtx(n.id);
+  return `STUDY MATERIAL:\n${material}\n\nTHE QUIZ:\n${qText || "(no questions yet)"}${focus ? `\n\nSTUDENT'S STATED FOCUS: ${focus}` : ""}`;
+}
+
+async function onQuizChatSubmit(e) {
+  e.preventDefault();
+  const input = $("#quizchat-input");
+  const q = (input?.value || "").trim();
+  if (!q) return;
+  input.value = "";
+  const scroll = $("#quizchat-scroll");
+  if (!scroll) return;
+  if (!state.quizChat.length) scroll.innerHTML = ""; // drop the empty-state hint
+  const userMsg = { role: "user", content: q };
+  state.quizChat.push(userMsg);
+  scroll.insertAdjacentHTML("beforeend", quizChatMsgHTML(userMsg));
+  scroll.insertAdjacentHTML("beforeend", `<div class="msg assistant" id="qc-pending"><div class="spinner"></div></div>`);
+  scroll.scrollTop = scroll.scrollHeight;
+  try {
+    const history = state.quizChat.slice(0, -1).slice(-10);
+    const answer = await aiGenerate("quizchat", { context: buildQuizChatContext(), history, question: q });
+    $("#qc-pending")?.remove();
+    const aMsg = { role: "assistant", content: answer };
+    state.quizChat.push(aMsg);
+    scroll.insertAdjacentHTML("beforeend", quizChatMsgHTML(aMsg));
+    typesetMath(scroll);
+    scroll.scrollTop = scroll.scrollHeight;
+  } catch (err) {
+    $("#qc-pending")?.remove();
+    toast(err.message, "error");
+  }
 }
 async function generateQuiz() {
   const n = state.current;
   busy(true, "Writing quiz questions…");
   try {
-    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("quiz", 8) });
+    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("quiz", 8), context: getQuizCtx(n.id) });
     const quiz = (Array.isArray(result) ? result : []).filter(
       (q) => q && q.question && Array.isArray(q.options) && q.options.length >= 2 && Number.isInteger(q.answer));
     if (!quiz.length) throw new Error("No questions were generated. Try again.");

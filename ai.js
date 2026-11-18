@@ -1,6 +1,6 @@
 // ai.js — client-side AI calls via Google Gemini (free tier).
 // Calls the Gemini API directly from the browser using the key in ai-config.js.
-// Tasks: notes | lesson | flashcards | quiz | chat | ask | document | image
+// Tasks: notes | lesson | flashcards | quiz | chat | quizchat | ask | document | image
 import { GEMINI_MODEL } from "./ai-config.js";
 
 const MAX_SOURCE = 600_000;
@@ -69,6 +69,9 @@ Rules: exactly 4 options per question; "answer" is the 0-based index of the corr
 
 const CHAT_SYSTEM = `You are a friendly, sharp study tutor. Answer the student's questions using their study notes below as your primary source. Be clear and concise, use short examples where they help, and format with Markdown when useful. If the notes don't cover something, say so briefly and then give your best general explanation. Don't make up specifics that would appear in their course if they aren't in the notes.`;
 
+const QUIZCHAT_SYSTEM = `You are a sharp, encouraging quiz tutor. The student is reviewing a specific multiple-choice quiz built from their study material. Below you are given their study material, the quiz (each question with its options, the correct answer, and an explanation), and which option the student picked for each question (if any).
+Help them actually learn: explain why an answer is right or wrong, clear up misconceptions, and connect ideas back to the material. When they ask for more practice, write ADDITIONAL questions in plain readable text (not JSON) — each with its answer and a one-line explanation. Be concise and use Markdown when it helps. Ground everything in the provided material; if something is outside it, give your best general explanation and note that it's beyond their notes. If the student gave a focus or context, weigh it heavily.`;
+
 const ASK_SYSTEM = `You are a study assistant answering a student's question using ONLY their own notes, provided below as numbered SOURCES. Each source is one of the student's notes, written as:
 
 [n] "Note title"
@@ -116,6 +119,7 @@ const TASKS = {
   flashcards: { system: FLASHCARDS_SYSTEM, max_tokens: 6000, json: true },
   quiz:       { system: QUIZ_SYSTEM,       max_tokens: 8000, json: true },
   chat:       { system: CHAT_SYSTEM,       max_tokens: 4000, json: false },
+  quizchat:   { system: QUIZCHAT_SYSTEM,   max_tokens: 4000, json: false },
   ask:        { system: ASK_SYSTEM,        max_tokens: 4000, json: false },
   feynman:    { system: FEYNMAN_SYSTEM,    max_tokens: 2000, json: true },
   podcast:    { system: PODCAST_SYSTEM,    max_tokens: 8000, json: true },
@@ -238,11 +242,11 @@ function buildBody(task, payload, cfg) {
     };
   }
 
-  if (task === "chat" || task === "ask") {
+  if (task === "chat" || task === "ask" || task === "quizchat") {
     const context = String(payload?.context || "").slice(0, MAX_SOURCE);
     const history = Array.isArray(payload?.history) ? payload.history : [];
     const question = String(payload?.question || "").trim();
-    const label = task === "ask" ? "SOURCES" : "STUDY NOTES";
+    const label = task === "ask" ? "SOURCES" : task === "quizchat" ? "QUIZ & STUDY MATERIAL" : "STUDY NOTES";
     return {
       system_instruction: { parts: [{ text: `${cfg.system}\n\n${label}:\n\n${context}` }] },
       contents: [
@@ -261,6 +265,7 @@ function buildBody(task, payload, cfg) {
   if (task === "flashcards" || task === "quiz") {
     if (payload?.difficulty) sys += difficultyDirective(task, payload.difficulty);
     if (payload?.count) sys += countDirective(task, payload.count);
+    if (payload?.context) sys += `\n\nSTUDENT'S FOCUS — weigh this heavily when choosing what to test and how to frame questions: ${String(payload.context).slice(0, 2000)}`;
   }
   if (task === "podcast" && payload?.minutes) sys += podcastLengthDirective(payload.minutes);
   return {
