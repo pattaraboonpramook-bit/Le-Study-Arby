@@ -12,10 +12,13 @@ const writeNotes = (a) => localStorage.setItem(K_NOTES, JSON.stringify(a));
 
 // ── Auth (auto-signed-in locally) ────────────────────────────────────────────
 export async function getUser() { return LOCAL_USER; }
-export function onAuthChange(cb) { setTimeout(() => cb(LOCAL_USER), 0); }
+export function onAuthChange(cb) { setTimeout(() => cb(LOCAL_USER, "SIGNED_IN"), 0); }
 export async function signIn() { return { user: LOCAL_USER }; }
 export async function signUp() { return { user: LOCAL_USER, session: {} }; }
 export async function signOut() { /* stay signed in in local mode */ }
+// Local mode has no passwords (single device, auto-signed-in).
+export async function resetPassword() { throw new Error("Password reset isn't available in local mode."); }
+export async function updatePassword() { throw new Error("Password reset isn't available in local mode."); }
 
 // ── Profiles (local mode is single-user: always an approved member) ──────────
 export async function getProfile() { return { id: LOCAL_USER.id, email: LOCAL_USER.email, role: "member" }; }

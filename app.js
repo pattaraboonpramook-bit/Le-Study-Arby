@@ -2,7 +2,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   backend, clearLocalData,
-  signIn, signUp, signOut, getUser, onAuthChange,
+  signIn, signUp, signOut, getUser, onAuthChange, resetPassword, updatePassword,
   getProfile, listUsers, setUserRole,
   listNotes, getNote, createNote, updateNote, deleteNote,
   listChat, addChat,
@@ -65,6 +65,7 @@ const state = {
   podcastScript: null,      // [{speaker,text}] audio-overview script
   advanced: null,           // {deepDive, mainPoints[]}
   authMode: "signin",
+  recovery: false,          // true while setting a new password via a reset link
   selectMode: false,        // library multi-select (for combining notes)
   selected: new Set(),      // ids picked while in select mode
   subjectFilter: "",        // library filter: "" = all, "__none__" = unlabelled, else a subject
@@ -466,6 +467,7 @@ function toggleTheme() {
 //  RENDER
 // ═════════════════════════════════════════════════════════════════════════════
 function render() {
+  if (state.recovery) { app.innerHTML = recoveryHTML(); wireRecovery(); return; }
   if (!state.user) { app.innerHTML = authHTML(); wireAuth(); return; }
   // Cloud mode: block anyone who isn't an approved member/admin (server-enforced too).
   if (backend === "cloud" && state.role !== "member" && state.role !== "admin") {
@@ -521,6 +523,7 @@ function authHTML() {
       <input class="input" type="email" id="email" placeholder="you@school.edu" autocomplete="email" required />
       <input class="input" type="password" id="password" placeholder="Password (min 6 chars)" autocomplete="${signup ? "new-password" : "current-password"}" minlength="6" required />
       <button class="btn btn-primary" type="submit" style="margin-top:6px">${signup ? "Sign up" : "Sign in"}</button>
+      ${signup || backend !== "cloud" ? "" : `<button type="button" class="toggle auth-forgot" id="auth-forgot">Forgot password?</button>`}
       <div class="row">
         <span style="color:var(--text-2)">${signup ? "Already have an account?" : "New here?"}</span>
         <button type="button" class="toggle" id="auth-toggle">${signup ? "Sign in" : "Create one"}</button>
@@ -531,6 +534,18 @@ function authHTML() {
 
 function wireAuth() {
   $("#auth-toggle").onclick = () => { state.authMode = state.authMode === "signup" ? "signin" : "signup"; render(); };
+  const forgot = $("#auth-forgot");
+  if (forgot) forgot.onclick = async () => {
+    const email = $("#email").value.trim();
+    if (!email) { toast("Type your email above first, then tap “Forgot password”.", "error"); $("#email").focus(); return; }
+    busy(true, "Sending reset link…");
+    try {
+      await resetPassword(email);
+      toast("If that email has an account, a reset link is on its way. Check your inbox (and spam).", "success");
+    } catch (err) {
+      toast(err.message || "Couldn't send the reset email.", "error");
+    } finally { busy(false); }
+  };
   $("#auth-form").onsubmit = async (e) => {
     e.preventDefault();
     const email = $("#email").value.trim();
@@ -553,6 +568,40 @@ function wireAuth() {
     } finally {
       busy(false);
     }
+  };
+}
+
+// ── Password recovery ────────────────────────────────────────────────────────
+// Shown when the user arrives via a reset-email link (PASSWORD_RECOVERY event):
+// they're holding a temporary session and just need to pick a new password.
+function recoveryHTML() {
+  return `<div class="auth"><div class="auth-card">
+    <div class="auth-logo"><div class="mark">✺</div></div>
+    <h1>Set a new password</h1>
+    <p class="sub">Choose a new password for ${escapeHtml(state.user?.email || "your account")}.</p>
+    <form id="recovery-form">
+      <input class="input" type="password" id="new-password" placeholder="New password (min 6 chars)" autocomplete="new-password" minlength="6" required />
+      <input class="input" type="password" id="new-password2" placeholder="Confirm new password" autocomplete="new-password" minlength="6" required />
+      <button class="btn btn-primary" type="submit" style="margin-top:6px">Update password</button>
+    </form>
+  </div></div>`;
+}
+function wireRecovery() {
+  $("#recovery-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const p1 = $("#new-password").value;
+    const p2 = $("#new-password2").value;
+    if (p1.length < 6) { toast("Password must be at least 6 characters.", "error"); return; }
+    if (p1 !== p2) { toast("Those passwords don't match.", "error"); return; }
+    busy(true, "Updating your password…");
+    try {
+      await updatePassword(p1);
+      state.recovery = false;
+      toast("Password updated — you're signed in. 🎉", "success");
+      await enterApp();
+    } catch (err) {
+      toast(err.message || "Couldn't update the password.", "error");
+    } finally { busy(false); }
   };
 }
 
@@ -2828,13 +2877,16 @@ async function boot() {
   const s = updateStreak();
   state.streak = s.streak;
   state.streakGained = s.gained;
-  onAuthChange((user) => {
+  onAuthChange((user, event) => {
+    if (event === "PASSWORD_RECOVERY") { state.user = user; state.recovery = true; render(); return; }
+    if (state.recovery) return; // mid password-reset — ignore other auth events until it's set
     const was = state.user;
     state.user = user;
     if (user && !was) enterApp();
     else if (!user) { state.role = null; state.notes = null; state.current = null; render(); }
   });
   state.user = await getUser();
+  if (state.recovery) return;      // arrived via a reset link; recovery screen is showing
   if (state.user) await enterApp();
   else render();
 }

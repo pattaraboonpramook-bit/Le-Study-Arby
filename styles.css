@@ -163,6 +163,7 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .auth form { display: flex; flex-direction: column; gap: 12px; }
 .auth .row { display: flex; justify-content: space-between; align-items: center; font-size: 0.88rem; margin-top: 4px; }
 .auth .toggle { color: var(--accent); font-weight: 600; }
+.auth-forgot { align-self: center; font-size: .86rem; margin-top: 2px; }
 .field-label { font-size: 0.82rem; font-weight: 600; color: var(--text-2); margin-bottom: -4px; }
 
 .setup-note { width: min(560px, 92vw); background: var(--surface); border: 1px solid var(--border);

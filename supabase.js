@@ -37,6 +37,22 @@ export async function signOut() {
   await supabase.auth.signOut();
 }
 
+// Send a password-reset email. The link returns the user to the app with a
+// temporary recovery session (handled via the PASSWORD_RECOVERY auth event).
+// For privacy, Supabase succeeds whether or not the email exists.
+export async function resetPassword(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname,
+  });
+  if (error) throw error;
+}
+
+// Set a new password for the currently-authenticated (or recovery) session.
+export async function updatePassword(newPassword) {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
 export async function getUser() {
   if (!supabase) return null;
   const { data } = await supabase.auth.getUser();
@@ -45,7 +61,7 @@ export async function getUser() {
 
 export function onAuthChange(cb) {
   if (!supabase) return;
-  supabase.auth.onAuthStateChange((_event, session) => cb(session?.user ?? null));
+  supabase.auth.onAuthStateChange((event, session) => cb(session?.user ?? null, event));
 }
 
 // ── Profiles / access control ────────────────────────────────────────────────
