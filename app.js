@@ -77,6 +77,9 @@ let ttsState = { playing: false, paused: false, rate: 1, volume: 1, curTurn: 0 }
 let recognition = null;
 let recording = false;
 let installEvent = null;
+// In-flight guards so a second submit can't fire while a reply is still loading
+// (double requests waste the free-tier quota and leave an orphaned spinner).
+let chatBusy = false, quizChatBusy = false, askBusy = false;
 
 // ── Tiny utilities ───────────────────────────────────────────────────────────
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1227,16 +1230,24 @@ function htmlToText(html) {
   } catch { return ""; }
 }
 
+// fetch() with a hard timeout, so a slow or stuck endpoint can't freeze the app.
+function fetchWithTimeout(resource, opts = {}, ms = 30_000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(resource, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 // Fetch a public web page as clean text. A browser can't read most sites directly
 // (CORS), so we use a reader service (r.jina.ai) that returns article-only
 // Markdown with open CORS, and fall back to a direct fetch for sites that allow it.
+// Both attempts are time-bounded so a hung reader never leaves the user stuck.
 async function fetchPageText(url) {
   try {
-    const r = await fetch("https://r.jina.ai/" + url, { headers: { Accept: "text/plain" } });
+    const r = await fetchWithTimeout("https://r.jina.ai/" + url, { headers: { Accept: "text/plain" } });
     if (r.ok) { const t = (await r.text()).trim(); if (t.length > 200) return t.slice(0, 200_000); }
   } catch {}
   try {
-    const r = await fetch(url);
+    const r = await fetchWithTimeout(url, {}, 15_000);
     if (r.ok) { const t = htmlToText(await r.text()); if (t.length > 200) return t.slice(0, 200_000); }
   } catch {}
   throw new Error("Couldn't read that page. Some sites block automated reading — open it and use Paste instead.");
@@ -1967,10 +1978,11 @@ async function onQuizChatSubmit(e) {
   e.preventDefault();
   const input = $("#quizchat-input");
   const q = (input?.value || "").trim();
-  if (!q) return;
-  input.value = "";
+  if (!q || quizChatBusy) return;
   const scroll = $("#quizchat-scroll");
   if (!scroll) return;
+  quizChatBusy = true;
+  input.value = "";
   if (!state.quizChat.length) scroll.innerHTML = ""; // drop the empty-state hint
   const userMsg = { role: "user", content: q };
   state.quizChat.push(userMsg);
@@ -1989,7 +2001,7 @@ async function onQuizChatSubmit(e) {
   } catch (err) {
     $("#qc-pending")?.remove();
     toast(err.message, "error");
-  }
+  } finally { quizChatBusy = false; }
 }
 async function generateQuiz() {
   const n = state.current;
@@ -1997,7 +2009,8 @@ async function generateQuiz() {
   try {
     const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("quiz", 8), context: getQuizCtx(n.id) });
     const quiz = (Array.isArray(result) ? result : []).filter(
-      (q) => q && q.question && Array.isArray(q.options) && q.options.length >= 2 && Number.isInteger(q.answer));
+      (q) => q && q.question && Array.isArray(q.options) && q.options.length >= 2
+        && Number.isInteger(q.answer) && q.answer >= 0 && q.answer < q.options.length);
     if (!quiz.length) throw new Error("No questions were generated. Try again.");
     await patchNote({ quiz });
     state.quiz = { answers: {} };
@@ -2314,7 +2327,8 @@ async function onChatSubmit(e) {
   e.preventDefault();
   const input = $("#chat-input");
   const q = input.value.trim();
-  if (!q) return;
+  if (!q || chatBusy) return;
+  chatBusy = true;
   input.value = "";
   const scroll = $("#chat-scroll");
   if (state.chat.length === 0) scroll.innerHTML = "";
@@ -2341,7 +2355,7 @@ async function onChatSubmit(e) {
   } catch (err) {
     $("#pending")?.remove();
     toast(err.message, "error");
-  }
+  } finally { chatBusy = false; }
 }
 
 // ── Ask across all notes ─────────────────────────────────────────────────────
@@ -2475,9 +2489,10 @@ async function submitAsk() {
   const input = $("#ask-input");
   if (!input) return;
   const q = input.value.trim();
-  if (!q) return;
+  if (!q || askBusy) return;
   const scroll = $("#ask-scroll");
   if (!scroll) return;
+  askBusy = true;
   input.value = "";
   const firstTurn = askThread.length === 0;
   if (firstTurn) scroll.innerHTML = ""; // drop the empty-state / suggestions
@@ -2503,7 +2518,7 @@ async function submitAsk() {
   } catch (err) {
     $("#ask-pending")?.remove();
     toast(err.message, "error");
-  }
+  } finally { askBusy = false; }
 }
 
 // Reveal the header "Clear" button once a conversation has started (the header
