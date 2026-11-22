@@ -1,6 +1,6 @@
 // ai.js — client-side AI calls via Google Gemini (free tier).
 // Calls the Gemini API directly from the browser using the key in ai-config.js.
-// Tasks: notes | lesson | flashcards | quiz | chat | quizchat | ask | document | image
+// Tasks: notes | lesson | flashcards | quiz | chat | quizchat | ask | merge | document | image
 import { GEMINI_MODEL } from "./ai-config.js";
 
 const MAX_SOURCE = 600_000;
@@ -72,6 +72,15 @@ const CHAT_SYSTEM = `You are a friendly, sharp study tutor. Answer the student's
 const QUIZCHAT_SYSTEM = `You are a sharp, encouraging quiz tutor. The student is reviewing a specific multiple-choice quiz built from their study material. Below you are given their study material, the quiz (each question with its options, the correct answer, and an explanation), and which option the student picked for each question (if any).
 Help them actually learn: explain why an answer is right or wrong, clear up misconceptions, and connect ideas back to the material. When they ask for more practice, write ADDITIONAL questions in plain readable text (not JSON) — each with its answer and a one-line explanation. Be concise and use Markdown when it helps. Ground everything in the provided material; if something is outside it, give your best general explanation and note that it's beyond their notes. If the student gave a focus or context, weigh it heavily.`;
 
+const MERGE_SYSTEM = `You merge several of the student's study notes into ONE unified, coherent set of study notes. The sources are provided below, each under a "### SOURCE: <title>" heading.
+Produce a single, well-organised set of notes in GitHub-flavoured Markdown that:
+- Combines everything important from all sources into one logical structure — a unified document, not a list of the separate notes stacked together.
+- Merges overlapping or repeated ideas so each concept appears once, in the most sensible place, and groups related material from different sources together.
+- Removes redundancy; if two sources conflict, keep the clearest, most complete version.
+- Preserves every distinct fact, definition, example, formula, and detail — never drop information that appears in only one source.
+- Opens with a single "# " title that reflects the combined topic, then uses "## "/"### " headings, bullet lists, and **bold** for key terms. Preserve any math in LaTeX ($…$).
+Base everything strictly on the provided sources; do not invent new facts. Output only the merged Markdown notes.`;
+
 const ASK_SYSTEM = `You are a study assistant answering a student's question using ONLY their own notes, provided below as numbered SOURCES. Each source is one of the student's notes, written as:
 
 [n] "Note title"
@@ -113,6 +122,7 @@ const TASKS = {
   image:      { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
   document:   { system: NOTES_SYSTEM,      max_tokens: 8000, json: false },
   translate:  { system: "",                max_tokens: 8000, json: false },
+  merge:      { system: MERGE_SYSTEM,      max_tokens: 8000, json: false },
   advanced:   { system: ADVANCED_SYSTEM,   max_tokens: 6000, json: true },
   lesson:     { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
   video:      { system: LESSON_SYSTEM,     max_tokens: 8000, json: false },
@@ -299,6 +309,10 @@ function tuneCall(task) {
   if (task === "document") {
     // PDFs can run to many pages — give them room, but don't burn quota on many retries.
     return { timeoutMs: 120_000, attemptsPrimary: 2, attemptsFallback: 1, maxModels: 3 };
+  }
+  if (task === "merge") {
+    // Synthesising several notes into one is a larger single generation.
+    return { timeoutMs: 90_000, attemptsPrimary: 2, attemptsFallback: 1, maxModels: 3 };
   }
   return { timeoutMs: 45_000, attemptsPrimary: 4, attemptsFallback: 2, maxModels: MODEL_CHAIN.length };
 }

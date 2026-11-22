@@ -115,6 +115,8 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .pill.record { background: var(--bad-weak); color: var(--bad); }
 .pill.paste  { background: var(--accent-weak); color: var(--accent); }
 .pill.youtube{ background: var(--good-weak); color: var(--good); }
+.pill.link   { background: var(--good-weak); color: var(--good); }
+.pill.merge  { background: var(--accent-weak); color: var(--accent); }
 
 .spinner { width: 18px; height: 18px; border: 2.5px solid var(--border);
   border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }

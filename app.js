@@ -696,7 +696,8 @@ function libraryHTML() {
       </div>
       ${state.selectMode
         ? `<button class="btn btn-ghost" id="combine-cancel">Cancel</button>`
-        : `${(state.notes && state.notes.length >= 1) ? `<div class="menu-wrap"><button class="btn btn-icon btn-ghost" id="lib-more" title="More actions" aria-label="More actions" aria-haspopup="menu">⋯</button></div>` : ""}
+        : `${(state.notes && state.notes.length >= 2) ? `<button class="btn btn-ghost" id="combine-start" title="Merge several notes into one">⛓ Combine</button>` : ""}
+           ${(state.notes && state.notes.length >= 1) ? `<div class="menu-wrap"><button class="btn btn-icon btn-ghost" id="lib-more" title="More actions" aria-label="More actions" aria-haspopup="menu">⋯</button></div>` : ""}
            <button class="btn btn-primary" id="new-note">＋ New note</button>`}
     </div>
   </div>`;
@@ -761,6 +762,7 @@ function wireLibrary() {
   const nb = $("#new-note"); if (nb) nb.onclick = goCapture;
   const nb2 = $("#new-note-2"); if (nb2) nb2.onclick = goCapture;
   const more = $("#lib-more"); if (more) more.onclick = (e) => { e.stopPropagation(); openLibMenu(more); };
+  const cs = $("#combine-start"); if (cs) cs.onclick = () => { state.selectMode = true; state.selected = new Set(); renderView(); };
   const cc = $("#combine-cancel"); if (cc) cc.onclick = exitSelectMode;
   const cg = $("#combine-go"); if (cg) cg.onclick = combineSelected;
   $$(".subj-opt").forEach((b) => (b.onclick = () => { state.subjectFilter = b.dataset.subj; renderView(); }));
@@ -782,21 +784,17 @@ function wireLibrary() {
   }));
 }
 
-// Library "⋯" overflow menu — holds the secondary actions (Ask, Combine) so the
-// header stays calm. Mirrors the account menu's build + outside-click-to-close.
+// Library "⋯" overflow menu — holds the secondary action (Ask across notes) so
+// the header stays calm. Mirrors the account menu's build + outside-click-to-close.
 function openLibMenu(btn) {
   if ($("#lib-menu")) { $("#lib-menu").remove(); return; } // toggle closed
-  const n = (state.notes || []).length;
   const menu = document.createElement("div");
   menu.className = "menu lib-menu";
   menu.id = "lib-menu";
   menu.setAttribute("role", "menu");
-  menu.innerHTML =
-    `<button id="lm-ask">✦ Ask across notes</button>` +
-    (n >= 2 ? `<button id="lm-combine">⛓ Combine notes</button>` : "");
+  menu.innerHTML = `<button id="lm-ask">✦ Ask across notes</button>`; // Combine now has its own header button
   btn.parentElement.appendChild(menu);
   const ask = $("#lm-ask"); if (ask) ask.onclick = () => { menu.remove(); goAsk(); };
-  const comb = $("#lm-combine"); if (comb) comb.onclick = () => { menu.remove(); state.selectMode = true; state.selected = new Set(); renderView(); };
   setTimeout(() => document.addEventListener("click", function close(e) {
     if (menu.contains(e.target) || e.target === btn) return;
     menu.remove(); document.removeEventListener("click", close);
@@ -805,32 +803,37 @@ function openLibMenu(btn) {
 
 function exitSelectMode() { state.selectMode = false; state.selected = new Set(); renderView(); }
 
-// Merge several notes into one new note (concatenates their content under
-// per-source headings; the student can then regenerate/enhance from the result).
+// Merge several notes into ONE new note. Gemini synthesises the selected notes
+// into a single coherent set of study notes (overlaps merged, duplicates removed,
+// reorganised) rather than just stacking them. The raw combined source is kept as
+// the transcript so the result stays regenerable.
 async function combineSelected() {
   const picked = (state.notes || []).filter((n) => state.selected.has(n.id));
   if (picked.length < 2) { toast("Pick at least 2 notes to combine.", "error"); return; }
-  const defTitle = picked.map((n) => n.title).join(" + ").slice(0, 80);
-  const title = (window.prompt("Name the combined note", defTitle) || "").trim();
-  if (!title) return;
-  busy(true, "Combining notes…");
+  busy(true, "Merging your notes…");
+  busyNoteSet("Reading and synthesising the notes into one — this can take a moment.");
   try {
     const stripTop = (md) => String(md || "").replace(/^\s*#\s+.*(\r?\n)+/, "");
-    const parts = [], transcripts = [];
+    const sources = [];
     for (const meta of picked) {
       const full = await getNote(meta.id);
       const body = (full.notes_md || full.transcript || "").trim();
-      if (body) parts.push(`## ${full.title}\n\n${full.notes_md ? stripTop(body) : body}`);
-      if (full.transcript && full.transcript.trim()) transcripts.push(`— ${full.title} —\n${full.transcript.trim()}`);
+      if (body) sources.push(`### SOURCE: ${full.title}\n\n${full.notes_md ? stripTop(body) : body}`);
     }
-    if (!parts.length) throw new Error("Those notes have no content to combine yet.");
-    const notes_md = `# ${title}\n\n${parts.join("\n\n---\n\n")}`;
+    if (!sources.length) throw new Error("Those notes have no content to combine yet.");
+    const combined = sources.join("\n\n");
+    const notes_md = await aiGenerate("merge", { source: combined });
+    if (!notes_md || !notes_md.trim()) throw new Error("The merge came back empty — try again.");
+    const defTitle = picked.map((n) => n.title).join(" + ").slice(0, 80);
     const created = await createNote({
-      title, source_type: "paste", source_ref: null,
-      transcript: transcripts.join("\n\n"), notes_md, flashcards: [], quiz: [],
+      title: titleFromMarkdown(notes_md, defTitle),
+      source_type: "merge", source_ref: null,
+      transcript: combined, notes_md, flashcards: [], quiz: [],
     });
     state.selectMode = false; state.selected = new Set();
-    toast(`Combined ${picked.length} notes ✓`, "success");
+    toast(`Merged ${picked.length} notes ✓`, "success");
+    confetti();
+    award(10);
     openNoteObject(created);
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
