@@ -275,9 +275,12 @@ function buildBody(task, payload, cfg) {
   if (task === "flashcards" || task === "quiz") {
     if (payload?.difficulty) sys += difficultyDirective(task, payload.difficulty);
     if (payload?.count) sys += countDirective(task, payload.count);
-    if (payload?.context) sys += `\n\nSTUDENT'S FOCUS — weigh this heavily when choosing what to test and how to frame questions: ${String(payload.context).slice(0, 2000)}`;
   }
   if (task === "podcast" && payload?.minutes) sys += podcastLengthDirective(payload.minutes);
+  // Optional per-feature focus the student typed — steer generation toward it.
+  if (payload?.context && task !== "merge") {
+    sys += `\n\nSTUDENT'S FOCUS — the student explicitly asked you to focus on / handle this; weigh it heavily and follow it: ${String(payload.context).slice(0, 2000)}`;
+  }
   return {
     system_instruction: { parts: [{ text: sys }] },
     contents: [{ role: "user", parts: [{ text: `${label}:\n\n${source}` }] }],

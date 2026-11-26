@@ -491,16 +491,16 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .chat-form input { flex: 1; border-radius: 999px; }
 .chat-empty { text-align: center; color: var(--muted); margin: auto; padding: 30px; }
 
-/* Quiz focus box + quiz tutor chat */
-.quiz-focus { max-width: 720px; margin: 0 auto 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 0 14px; }
-.quiz-focus > summary { cursor: pointer; font-weight: 600; font-size: .9rem; padding: 11px 0; color: var(--text-2);
+/* Focus / context box (shared by every generation feature) + quiz tutor chat */
+.focus-box { max-width: 720px; margin: 0 auto 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 0 14px; }
+.focus-box > summary { cursor: pointer; font-weight: 600; font-size: .9rem; padding: 11px 0; color: var(--text-2);
   list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.quiz-focus > summary::-webkit-details-marker { display: none; }
-.quiz-focus > summary::after { content: "▾"; font-size: .8em; opacity: .7; transition: transform .18s ease; }
-.quiz-focus[open] > summary::after { transform: rotate(180deg); }
-.quiz-focus[open] > summary { color: var(--text); }
-.quiz-focus textarea { min-height: 60px; margin-bottom: 8px; }
-.quiz-focus-hint { font-size: .78rem; color: var(--muted); margin: 0 0 12px; }
+.focus-box > summary::-webkit-details-marker { display: none; }
+.focus-box > summary::after { content: "▾"; font-size: .8em; opacity: .7; transition: transform .18s ease; }
+.focus-box[open] > summary::after { transform: rotate(180deg); }
+.focus-box[open] > summary { color: var(--text); }
+.focus-box textarea { min-height: 60px; margin-bottom: 8px; }
+.focus-hint { font-size: .78rem; color: var(--muted); margin: 0 0 12px; }
 .quiz-chat { max-width: 720px; margin: 18px auto 0; display: flex; flex-direction: column; }
 .quiz-chat-h { font-weight: 700; font-size: .95rem; margin-bottom: 10px; color: var(--text); }
 .quiz-chat .chat-scroll { max-height: min(50vh, 440px); flex: 0 1 auto; }

@@ -380,9 +380,25 @@ function typesetMath(root) {
 }
 window.addEventListener("load", () => { if (mathPending) { mathPending = false; typesetMath(app); } });
 
-// Per-note quiz "focus" — free-text context that steers quiz generation. Per-device.
-const getQuizCtx = (id) => { try { return localStorage.getItem("recall_quizctx_" + id) || ""; } catch { return ""; } };
-const setQuizCtx = (id, s) => { try { const v = (s || "").slice(0, 1000); if (v.trim()) localStorage.setItem("recall_quizctx_" + id, v); else localStorage.removeItem("recall_quizctx_" + id); } catch {} };
+// Per-note, per-feature "focus" — free text that steers AI generation. Saved
+// per device, keyed by feature + note, and passed to the AI as `context`.
+const getFocus = (id, kind) => { try { return localStorage.getItem(`recall_focus_${kind}_${id}`) || ""; } catch { return ""; } };
+const setFocus = (id, kind, s) => { try { const k = `recall_focus_${kind}_${id}`; const v = (s || "").slice(0, 1000); if (v.trim()) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch {} };
+
+// Reusable collapsible "Focus / context" box used by every generation feature.
+function focusBoxHTML(kind, placeholder) {
+  const ctx = state.current ? getFocus(state.current.id, kind) : "";
+  return `<details class="focus-box"${ctx ? " open" : ""}>
+    <summary>🎯 Focus / context${ctx ? " ✓" : " (optional)"}</summary>
+    <textarea class="input focus-ctx" data-kind="${kind}" rows="2" placeholder="${escapeHtml(placeholder)}">${escapeHtml(ctx)}</textarea>
+    <p class="focus-hint">Steers what gets generated here. Saved for this note.</p>
+  </details>`;
+}
+// Bind every focus box currently on screen (called once from renderNotePanel).
+function wireFocusBoxes() {
+  if (!state.current) return;
+  $$(".focus-ctx").forEach((t) => (t.oninput = () => setFocus(state.current.id, t.dataset.kind, t.value)));
+}
 
 // Difficulty + count for flashcards / quizzes (stored per-device).
 const getDifficulty = () => { try { return localStorage.getItem("recall_difficulty") || "Medium"; } catch { return "Medium"; } };
@@ -1525,14 +1541,17 @@ function renderNotePanel() {
   else if (tab === "podcast") { p.innerHTML = podcastTabHTML(); wirePodcast(); }
   else if (tab === "chat") { p.innerHTML = `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`; loadAndRenderChat(); }
   if (tab === "notes") wireNotesTab();
+  wireFocusBoxes();
   typesetMath(p);
 }
 
 // Notes tab
+const NOTES_FOCUS_PH = "How should these notes be written? e.g. “focus on definitions and formulas”, “keep it concise”, “emphasise chapter 2”.";
 function notesTabHTML() {
   const n = state.current;
   if (!n.notes_md) {
-    return genCTA("✎", "No notes yet", "Generate clean study notes from the captured material.", "gen-notes", "Generate notes");
+    return focusBoxHTML("notes", NOTES_FOCUS_PH)
+      + genCTA("✎", "No notes yet", "Generate clean study notes from the captured material.", "gen-notes", "Generate notes");
   }
   if (state.notesEditing) {
     return `<div class="panel"><textarea class="input notes-editor" id="notes-editor" spellcheck="true">${escapeHtml(n.notes_md)}</textarea>
@@ -1542,7 +1561,7 @@ function notesTabHTML() {
         <span class="notes-edithint">Markdown: # Heading · - bullet · **bold**</span>
       </div></div>`;
   }
-  return `<div class="panel"><div class="prose">${mdToHtml(n.notes_md)}</div>
+  return focusBoxHTML("notes", NOTES_FOCUS_PH) + `<div class="panel"><div class="prose">${mdToHtml(n.notes_md)}</div>
     <div style="margin-top:24px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="edit-notes">✎ Edit</button>
       <button class="btn btn-outline btn-sm" id="regen-notes">↻ Regenerate</button>
@@ -1727,7 +1746,7 @@ async function generateNotes() {
   if (!source) { toast("Nothing to summarize.", "error"); return; }
   busy(true, "Writing your notes…");
   try {
-    const result = await aiGenerate("notes", { source });
+    const result = await aiGenerate("notes", { source, context: getFocus(n.id, "notes") });
     await patchNote({ notes_md: result, title: titleFromMarkdown(result, n.title) });
     renderNotePanel();
     award(8);
@@ -1739,13 +1758,14 @@ const getAdvancedLS = (id) => { try { const s = localStorage.getItem("recall_adv
 const setAdvancedLS = (id, adv) => { try { localStorage.setItem("recall_advanced_" + id, JSON.stringify(adv)); } catch {} };
 
 // Advanced tab — the meticulous, sophisticated elaboration (deep dive).
+const ADV_FOCUS_PH = "Steer the breakdown — e.g. “focus on causes and consequences”, “go deeper on the math”, “explain the key people”.";
 function advancedTabHTML() {
   const n = state.current;
   const material = (n.notes_md || n.transcript || "").trim();
   if (!material) return genCTA("🧠", "Nothing to analyze yet", "Generate notes first, then unlock the advanced elaboration.", "gen-notes-adv", "Go to Notes");
   const adv = state.advanced;
-  if (!adv || !adv.deepDive) return genCTA("🧠", "Advanced", "A meticulous, precise, sophisticated elaboration of this material.", "gen-advanced", "Generate");
-  return `<div class="panel advanced">
+  if (!adv || !adv.deepDive) return focusBoxHTML("advanced", ADV_FOCUS_PH) + genCTA("🧠", "Advanced", "A meticulous, precise, sophisticated elaboration of this material.", "gen-advanced", "Generate");
+  return focusBoxHTML("advanced", ADV_FOCUS_PH) + `<div class="panel advanced">
     <div class="adv-section">
       <h2 class="adv-h">✦ Advanced</h2>
       <p class="adv-sub">A meticulous, precise elaboration.</p>
@@ -1761,10 +1781,10 @@ function mainPointsTabHTML() {
   const material = (n.notes_md || n.transcript || "").trim();
   if (!material) return genCTA("📌", "Nothing to break down yet", "Generate notes first, then get the main points.", "gen-notes-adv", "Go to Notes");
   const adv = state.advanced;
-  if (!adv || !(adv.mainPoints || []).length) return genCTA("📌", "Main Points", "The most important events, actions, and plans — explained simply.", "gen-advanced", "Generate");
+  if (!adv || !(adv.mainPoints || []).length) return focusBoxHTML("advanced", ADV_FOCUS_PH) + genCTA("📌", "Main Points", "The most important events, actions, and plans — explained simply.", "gen-advanced", "Generate");
   const mp = adv.mainPoints.map((m, i) =>
     `<div class="mp-item"><div class="mp-num">${i + 1}</div><div><div class="mp-point">${escapeHtml(m.point || "")}</div><div class="mp-simple">${escapeHtml(m.simple || "")}</div></div></div>`).join("");
-  return `<div class="panel advanced">
+  return focusBoxHTML("advanced", ADV_FOCUS_PH) + `<div class="panel advanced">
     <div class="adv-section">
       <h2 class="adv-h">✦ Main Points</h2>
       <p class="adv-sub">The most important events, actions &amp; plans — kept simple.</p>
@@ -1784,7 +1804,7 @@ async function generateAdvanced() {
   const n = state.current;
   busy(true, "Assembling the advanced breakdown…");
   try {
-    const res = await aiGenerate("advanced", { source: n.notes_md || n.transcript });
+    const res = await aiGenerate("advanced", { source: n.notes_md || n.transcript, context: getFocus(n.id, "advanced") });
     const adv = {
       deepDive: String(res && res.deepDive || ""),
       mainPoints: (res && Array.isArray(res.mainPoints) ? res.mainPoints : []).filter((m) => m && m.point),
@@ -1798,17 +1818,18 @@ async function generateAdvanced() {
 }
 
 // Flashcards tab
+const FC_FOCUS_PH = "What should the deck cover? e.g. “only key terms and definitions”, “focus on chapter 3 vocab”, “formulas only”.";
 function flashTabHTML() {
   const cards = state.current.flashcards || [];
   if (cards.length === 0) {
-    return toolsBar("flashcards") + genCTA("🎴", "No flashcards yet", "Generate a deck from your notes and start studying.", "gen-fc", "Generate flashcards");
+    return toolsBar("flashcards") + focusBoxHTML("flashcards", FC_FOCUS_PH) + genCTA("🎴", "No flashcards yet", "Generate a deck from your notes and start studying.", "gen-fc", "Generate flashcards");
   }
   const order = state.fc.order.length ? state.fc.order : cards.map((_, i) => i);
   const idx = order[state.fc.i];
   const card = cards[idx];
   const srs = getSRS(state.current.id);
   const mastered = cards.reduce((m, _, i) => m + ((srs[i] || 0) >= SRS_MASTERED ? 1 : 0), 0);
-  return toolsBar("flashcards") + `<div class="panel fc-stage${state.fc.flipped ? " flipped" : ""}">
+  return toolsBar("flashcards") + focusBoxHTML("flashcards", FC_FOCUS_PH) + `<div class="panel fc-stage${state.fc.flipped ? " flipped" : ""}">
     <div class="fc-progress">Card ${state.fc.i + 1} of ${cards.length} · <span class="fc-mastered">Mastered ${mastered}/${cards.length}</span></div>
     <div class="flashcard ${state.fc.flipped ? "flipped" : ""}" id="flashcard">
       <div class="flashcard-inner">
@@ -1883,7 +1904,7 @@ async function generateFlashcards() {
   const n = state.current;
   busy(true, "Making flashcards…");
   try {
-    const result = await aiGenerate("flashcards", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("flashcards", 10) });
+    const result = await aiGenerate("flashcards", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("flashcards", 10), context: getFocus(n.id, "flashcards") });
     const cards = (Array.isArray(result) ? result : []).filter((c) => c && c.front && c.back);
     if (!cards.length) throw new Error("No cards were generated. Try again.");
     await patchNote({ flashcards: cards });
@@ -1895,20 +1916,11 @@ async function generateFlashcards() {
 }
 
 // Quiz tab
-// A collapsible "focus" box: free-text context that steers the next quiz.
-function quizFocusHTML(id) {
-  const ctx = getQuizCtx(id);
-  return `<details class="quiz-focus"${ctx ? " open" : ""}>
-    <summary>🎯 Focus / context${ctx ? " ✓" : " (optional)"}</summary>
-    <textarea class="input" id="quiz-ctx" rows="2" placeholder="Tell the quiz what to focus on — e.g. “Only chapter 3; test dates and names, not definitions; add questions on the causes of the Revolution.”">${escapeHtml(ctx)}</textarea>
-    <p class="quiz-focus-hint">Used when you press <strong>New quiz</strong>. Saved for this note.</p>
-  </details>`;
-}
-
+const QUIZ_FOCUS_PH = "Tell the quiz what to focus on — e.g. “Only chapter 3; test dates and names, not definitions; add questions on the causes of the Revolution.”";
 function quizTabHTML() {
   const quiz = state.current.quiz || [];
   if (quiz.length === 0) {
-    return toolsBar("quiz") + quizFocusHTML(state.current.id)
+    return toolsBar("quiz") + focusBoxHTML("quiz", QUIZ_FOCUS_PH)
       + genCTA("❓", "No quiz yet", "Generate a practice quiz from your notes.", "gen-quiz", "Generate quiz");
   }
   const answered = state.quiz.answers;
@@ -1941,7 +1953,7 @@ function quizTabHTML() {
         <button class="btn btn-primary btn-sm" id="quiz-retake">↻ Retake</button></div>`
     : "";
 
-  return toolsBar("quiz") + quizFocusHTML(state.current.id) + `<div class="panel quiz">${quizHistLine(state.current.id)}${cards}${scoreCard}
+  return toolsBar("quiz") + focusBoxHTML("quiz", QUIZ_FOCUS_PH) + `<div class="panel quiz">${quizHistLine(state.current.id)}${cards}${scoreCard}
     <div style="text-align:center"><button class="btn btn-outline btn-sm" id="regen-quiz">↻ New quiz</button></div></div>`
     + quizChatHTML();
 }
@@ -1977,10 +1989,7 @@ function wireQuiz() {
   $$(".diff-opt").forEach((b) => (b.onclick = () => { setDifficulty(b.dataset.diff); renderNotePanel(); }));
   $$(".num-opt").forEach((b) => (b.onclick = () => { setCount(b.dataset.kind, +b.dataset.count); renderNotePanel(); }));
   $$(".q-why").forEach((b) => (b.onclick = () => explainQuizQuestion(+b.dataset.q)));
-  // Focus box is present in both the empty and the has-quiz states — bind it
-  // before the no-quiz early return below.
-  const ctx = $("#quiz-ctx");
-  if (ctx) ctx.oninput = () => setQuizCtx(state.current.id, ctx.value);
+  // (The focus box is wired centrally in renderNotePanel via wireFocusBoxes.)
   const g = $("#gen-quiz"); if (g) { g.onclick = () => generateQuiz(); return; }
   $$(".q-opt").forEach((b) => (b.onclick = () => {
     const qi = +b.dataset.q;
@@ -2022,7 +2031,7 @@ function buildQuizChatContext() {
     const opts = q.options.map((o, oi) => `${L(oi)}) ${o}`).join("   ");
     return `Q${i + 1}. ${q.question}\n   Options: ${opts}\n   Correct: ${L(q.answer)}) ${q.options[q.answer]}\n   Student chose: ${chosen}${q.explanation ? `\n   Explanation: ${q.explanation}` : ""}`;
   }).join("\n\n");
-  const focus = getQuizCtx(n.id);
+  const focus = getFocus(n.id, "quiz");
   return `STUDY MATERIAL:\n${material}\n\nTHE QUIZ:\n${qText || "(no questions yet)"}${focus ? `\n\nSTUDENT'S STATED FOCUS: ${focus}` : ""}`;
 }
 
@@ -2059,7 +2068,7 @@ async function generateQuiz() {
   const n = state.current;
   busy(true, "Writing quiz questions…");
   try {
-    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("quiz", 8), context: getQuizCtx(n.id) });
+    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("quiz", 8), context: getFocus(n.id, "quiz") });
     const quiz = (Array.isArray(result) ? result : []).filter(
       (q) => q && q.question && Array.isArray(q.options) && q.options.length >= 2
         && Number.isInteger(q.answer) && q.answer >= 0 && q.answer < q.options.length);
@@ -2172,12 +2181,13 @@ const getPodcastLS = (id) => { try { const s = localStorage.getItem("recall_podc
 const setPodcastLS = (id, script) => { try { localStorage.setItem("recall_podcast_" + id, JSON.stringify(script)); } catch {} };
 const HOSTS = { A: "Alex", B: "Sam" };
 
+const POD_FOCUS_PH = "Steer the episode — e.g. “focus on the experiments”, “explain it simply for a beginner”, “spend more time on causes”.";
 function podcastTabHTML() {
   const n = state.current;
   const material = (n.notes_md || n.transcript || "").trim();
   if (!material) return genCTA("🎧", "Nothing to narrate yet", "Generate notes first, then turn them into a listen-along podcast.", "gen-notes-pod", "Go to Notes");
   const script = state.podcastScript;
-  if (!script) return genCTA("🎙️", "Podcast mode", "Turn this note into a fun audio overview — two hosts chatting through the key ideas, read aloud so you can study hands-free.", "gen-podcast", "Generate podcast");
+  if (!script) return focusBoxHTML("podcast", POD_FOCUS_PH) + genCTA("🎙️", "Podcast mode", "Turn this note into a fun audio overview — two hosts chatting through the key ideas, read aloud so you can study hands-free.", "gen-podcast", "Generate podcast");
 
   const supported = "speechSynthesis" in window;
   const lines = script.map((t, i) =>
@@ -2212,7 +2222,7 @@ function podcastTabHTML() {
          <label class="pod-rate" title="Applies when you make a new script">Length<select id="pod-minutes">${minOpts}</select></label>
          <button class="btn btn-outline btn-sm" id="regen-pod">↻ New script</button>
        </div>`;
-  return `<div class="panel podcast">${player}${voiceRow}<div class="pod-script" id="pod-script">${lines}</div>
+  return focusBoxHTML("podcast", POD_FOCUS_PH) + `<div class="panel podcast">${player}${voiceRow}<div class="pod-script" id="pod-script">${lines}</div>
     <p style="color:var(--muted);font-size:.8rem;margin-top:14px;text-align:center">${voices.length ? "Pick the voices you like — then press play. " : "Voices load from your device. "}Tap any line to start from there.</p></div>`;
 }
 
@@ -2247,7 +2257,7 @@ async function generatePodcast() {
   stopSpeech();
   busy(true, "Recording your podcast…");
   try {
-    const raw = await aiGenerate("podcast", { source: n.notes_md || n.transcript, minutes: getPodMinutes() });
+    const raw = await aiGenerate("podcast", { source: n.notes_md || n.transcript, minutes: getPodMinutes(), context: getFocus(n.id, "podcast") });
     const script = (Array.isArray(raw) ? raw : [])
       .filter((t) => t && t.text)
       .map((t) => ({ speaker: (t.speaker === "B" || /sam|host ?2|b\b/i.test(String(t.speaker))) ? "B" : "A", text: String(t.text) }));
