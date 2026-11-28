@@ -183,6 +183,16 @@ export const FIELDS = {
     lens: "Adopt the mindset of a mathematician. Be rigorous and precise; state definitions and theorems exactly; justify claims with proofs or derivations; use correct notation in LaTeX ($…$) and watch edge cases.",
     tool: { key: "proof", name: "Proofs & derivations", icon: "🧮",
       system: "You are a mathematics tutor. From the student's material, pick the central result(s) and give rigorous PROOFS or DERIVATIONS in GitHub-flavoured Markdown: state each definition/theorem precisely, then prove or derive it step by step with justified steps, using LaTeX ($…$) for all math. Note assumptions and edge cases, and finish with a worked example. Base everything on the material." } },
+  architecture: {
+    id: "architecture", name: "Architecture", icon: "🏛️",
+    lens: "Adopt the mindset of an architect. Read the material through form and function, site and context, the program/brief, spatial organisation and circulation, structure and materials, light and human scale, and constraints (budget, codes, sustainability); reason with precedents and design intent (the parti).",
+    tool: { key: "concept", name: "Concept & precedent", icon: "🏗️",
+      system: "You are an architecture tutor. From the student's material, produce a design breakdown in GitHub-flavoured Markdown: the core design concept / parti and intent; spatial organisation and circulation; structure and materials; how it responds to site, context and constraints (program, budget, codes, sustainability); and one relevant PRECEDENT with what it teaches. Base everything on the material; do not invent projects." } },
+  psychology: {
+    id: "psychology", name: "Psychology", icon: "🧠",
+    lens: "Adopt the mindset of a psychologist. Separate theory, construct, and evidence; consider competing perspectives (cognitive, behavioural, biological, social, developmental); scrutinise study design, operationalisation, validity, bias and ethics; connect findings to real behaviour.",
+    tool: { key: "theory", name: "Theory & evidence", icon: "🧩",
+      system: "You are a psychology tutor. From the student's material, produce a breakdown in GitHub-flavoured Markdown: the key theory or construct explained clearly; the supporting EVIDENCE (naming any studies in the material, with their method and findings); a balanced EVALUATION (strengths, limitations, biases, ethical issues); and a real-world application. Base everything strictly on the material; do not invent studies." } },
 };
 
 function extractJson(text) {
