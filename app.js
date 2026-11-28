@@ -413,6 +413,74 @@ function studyTabs() {
   return (f && f.tool) ? [...STUDY_TABS, ["specialist", f.tool.name, f.tool.icon]] : STUDY_TABS;
 }
 
+// Grouping for the searchable field picker (presentation only; any field not
+// listed here still shows up under "Other").
+const FIELD_GROUPS = [
+  ["Health", ["medicine", "nursing", "psychology"]],
+  ["Business & Law", ["law", "finance", "economics"]],
+  ["STEM", ["engineering", "cs", "math", "science"]],
+  ["Built & Visual", ["architecture", "design"]],
+  ["Humanities & Communication", ["humanities", "languages", "journalism", "education"]],
+];
+function fieldListHTML(cur, query) {
+  const q = (query || "").trim().toLowerCase();
+  const match = (f) => f && (!q || f.name.toLowerCase().includes(q));
+  const opt = (f) => `<button class="field-opt${f.id === cur ? " active" : ""}" data-field="${f.id}" role="option" aria-selected="${f.id === cur}"><span class="fo-ic">${f.icon}</span><span class="fo-name">${escapeHtml(f.name)}</span>${f.id === cur ? `<span class="fo-check">✓</span>` : ""}</button>`;
+  let html = "";
+  if (match(FIELDS.none)) html += opt(FIELDS.none);
+  const seen = new Set(["none"]);
+  for (const [label, ids] of FIELD_GROUPS) {
+    const items = ids.map((id) => FIELDS[id]).filter(match);
+    items.forEach((f) => seen.add(f.id));
+    if (items.length) html += `<div class="field-group">${label}</div>` + items.map(opt).join("");
+  }
+  const others = Object.values(FIELDS).filter((f) => !seen.has(f.id) && match(f));
+  if (others.length) html += `<div class="field-group">Other</div>` + others.map(opt).join("");
+  return html || `<div class="field-empty">No field matches “${escapeHtml(query)}”.</div>`;
+}
+
+// A searchable, grouped field picker (replaces the plain <select>).
+let fieldPickerCleanup = null;
+function openFieldPicker(btn) {
+  if (fieldPickerCleanup) { fieldPickerCleanup(); return; } // toggle closed
+  const cur = getField(state.current.id);
+  const pop = document.createElement("div");
+  pop.className = "field-picker";
+  pop.id = "field-picker";
+  pop.innerHTML = `<input class="input field-search" id="field-search" placeholder="Search fields…" autocomplete="off" aria-label="Search fields" />
+    <div class="field-list" id="field-list" role="listbox">${fieldListHTML(cur, "")}</div>`;
+  btn.parentElement.appendChild(pop);
+  btn.setAttribute("aria-expanded", "true");
+
+  const search = $("#field-search");
+  const list = $("#field-list");
+  const choose = (fid) => {
+    close();
+    setField(state.current.id, fid);
+    if (fid === "none" && state.noteTab === "specialist") state.noteTab = "notes";
+    const f = currentField();
+    toast(f.tool ? `${f.icon} ${f.name} lens on — features re-tone, and “${f.tool.name}” is in the ✦ Study menu.` : "Field lens off.", "success");
+    renderView();
+  };
+  const bind = () => $$("#field-list [data-field]").forEach((b) => (b.onclick = () => choose(b.dataset.field)));
+  search.oninput = () => { list.innerHTML = fieldListHTML(cur, search.value); bind(); };
+  search.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); const first = $("#field-list [data-field]"); if (first) choose(first.dataset.field); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); }
+  };
+  bind();
+
+  const onDoc = (e) => { if (!pop.contains(e.target) && !btn.contains(e.target)) close(); };
+  function close() {
+    pop.remove();
+    btn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onDoc);
+    fieldPickerCleanup = null;
+  }
+  fieldPickerCleanup = close;
+  setTimeout(() => { document.addEventListener("click", onDoc); search.focus(); }, 0);
+}
+
 // Difficulty + count for flashcards / quizzes (stored per-device).
 const getDifficulty = () => { try { return localStorage.getItem("recall_difficulty") || "Medium"; } catch { return "Medium"; } };
 const setDifficulty = (d) => { try { localStorage.setItem("recall_difficulty", d); } catch {} };
@@ -1448,6 +1516,7 @@ const STUDY_TABS = [["flashcards", "Flashcards", "🎴"], ["quiz", "Quiz", "✓"
 
 function noteHTML() {
   const n = state.current;
+  const cf = FIELDS[getField(n.id)] || FIELDS.none;
   const readTabs = READ_TABS
     .map(([k, label]) => `<button data-tab="${k}" class="${state.noteTab === k ? "active" : ""}">${label}</button>`)
     .join("");
@@ -1466,9 +1535,9 @@ function noteHTML() {
       <span>${fmtDate(n.updated_at)}</span>
       ${n.source_ref ? `· <a href="${escapeHtml(n.source_ref)}" target="_blank" rel="noopener">source</a>` : ""}
       <button class="subject-chip" id="note-subject">🏷 ${getSubject(n.id) ? escapeHtml(getSubject(n.id)) : "Add subject"}</button>
-      <select class="field-select" id="note-field" title="Field specialist lens — re-tones every feature and unlocks a signature tool">
-        ${Object.values(FIELDS).map((f) => `<option value="${f.id}"${f.id === getField(n.id) ? " selected" : ""}>${f.icon} ${f.name}</option>`).join("")}
-      </select>
+      <div class="field-wrap">
+        <button class="field-trigger" id="field-trigger" aria-haspopup="listbox" aria-expanded="false" title="Field specialist lens — re-tones every feature and unlocks a signature tool">${cf.icon} ${escapeHtml(cf.name)} <span class="caret">▾</span></button>
+      </div>
     </div>
     <div class="tabs"><div class="tabs-read">${readTabs}</div><div class="menu-wrap">${studyBtn}</div></div>
     <div id="note-panel"></div>
@@ -1488,14 +1557,8 @@ function wireNote() {
     sub.textContent = "🏷 " + (getSubject(state.current.id) || "Add subject");
     toast(v.trim() ? "Subject set ✓" : "Subject cleared", "success");
   };
-  const fieldSel = $("#note-field");
-  if (fieldSel) fieldSel.onchange = () => {
-    setField(state.current.id, fieldSel.value);
-    if (fieldSel.value === "none" && state.noteTab === "specialist") state.noteTab = "notes";
-    const f = currentField();
-    toast(f.tool ? `${f.icon} ${f.name} lens on — features re-tone, and “${f.tool.name}” is in the ✦ Study menu.` : "Field lens off.", "success");
-    renderView();
-  };
+  const ft = $("#field-trigger");
+  if (ft) ft.onclick = (e) => { e.stopPropagation(); openFieldPicker(ft); };
   $$(".tabs-read button").forEach((b) => (b.onclick = () => { state.noteTab = b.dataset.tab; state.notesEditing = false; renderNotePanel(); syncTabActive(); }));
   const studyBtn = $("#study-btn");
   if (studyBtn) studyBtn.onclick = (e) => { e.stopPropagation(); openStudyMenu(studyBtn); };
@@ -2315,7 +2378,7 @@ function specialistTabHTML() {
        <div style="margin-top:20px;text-align:center"><button class="btn btn-outline btn-sm" id="regen-specialist">↻ Regenerate</button></div></div>`;
 }
 function wireSpecialist() {
-  const pick = $("#spec-pick"); if (pick) { pick.onclick = () => { const s = $("#note-field"); if (s) { s.focus(); try { s.showPicker && s.showPicker(); } catch {} } }; return; }
+  const pick = $("#spec-pick"); if (pick) { pick.onclick = () => { const t = $("#field-trigger"); if (t) openFieldPicker(t); }; return; }
   const gn = $("#gen-notes-spec"); if (gn) { gn.onclick = () => { state.noteTab = "notes"; renderNotePanel(); syncTabActive(); }; return; }
   const g = $("#gen-specialist"); if (g) g.onclick = generateSpecialist;
   const rg = $("#regen-specialist"); if (rg) rg.onclick = generateSpecialist;
