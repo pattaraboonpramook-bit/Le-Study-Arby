@@ -213,6 +213,16 @@ export const FIELDS = {
     lens: "Adopt the mindset of a designer. Start from the user/audience and the problem; weigh function and usability alongside visual principles (hierarchy, contrast, balance, typography, colour, grid, whitespace); value iteration, feedback and critique; respect constraints, so that form serves purpose.",
     tool: { key: "critique", name: "Design critique", icon: "🖌️",
       system: "You are a design tutor. From the student's material, produce a design CRITIQUE in GitHub-flavoured Markdown: the problem and intended audience; the core concept/approach; how visual and interaction principles are applied (hierarchy, contrast, typography, colour, layout, usability); what works and what doesn't; and concrete, prioritised improvements. Base everything on the material." } },
+  journalism: {
+    id: "journalism", name: "Journalism", icon: "📰",
+    lens: "Adopt the mindset of a journalist. Lead with the 5 Ws and How and the inverted pyramid (most important first); separate verified fact from opinion; attribute sources and weigh newsworthiness, angle, accuracy, balance and clarity.",
+    tool: { key: "brief", name: "News brief", icon: "📝",
+      system: "You are a journalism tutor. From the student's material, produce a news-style BRIEF in GitHub-flavoured Markdown: a strong one-sentence LEDE; the key facts answering who / what / when / where / why / how; the ANGLE and why it matters; the SOURCES you'd attribute; and the open QUESTIONS a reporter would still chase. Keep it factual and base everything on the material." } },
+  education: {
+    id: "education", name: "Education", icon: "🎓",
+    lens: "Adopt the mindset of an educator. Frame material by learning objectives (Bloom's taxonomy), scaffolding and prior knowledge, likely misconceptions, checks for understanding, differentiation and feedback — always asking how to make ideas learnable and memorable.",
+    tool: { key: "lessonplan", name: "Lesson plan", icon: "📒",
+      system: "You are an education tutor. From the student's material, build a LESSON PLAN in GitHub-flavoured Markdown: clear learning OBJECTIVES (Bloom-aligned); assumed prior knowledge; a sequenced set of ACTIVITIES / explanations with timings; CHECKS for understanding; likely MISCONCEPTIONS and how to address them; and a short ASSESSMENT. Base everything on the material." } },
 };
 
 function extractJson(text) {
