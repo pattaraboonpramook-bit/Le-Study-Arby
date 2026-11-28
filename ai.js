@@ -1,6 +1,7 @@
 // ai.js — client-side AI calls via Google Gemini (free tier).
 // Calls the Gemini API directly from the browser using the key in ai-config.js.
-// Tasks: notes | lesson | flashcards | quiz | chat | quizchat | ask | merge | document | image
+// Tasks: notes | lesson | flashcards | quiz | chat | quizchat | ask | merge | specialist | document | image
+// Field specialties (lens + signature tool) live in FIELDS, applied via payload.field.
 import { GEMINI_MODEL } from "./ai-config.js";
 
 const MAX_SOURCE = 600_000;
@@ -133,6 +134,55 @@ const TASKS = {
   ask:        { system: ASK_SYSTEM,        max_tokens: 4000, json: false },
   feynman:    { system: FEYNMAN_SYSTEM,    max_tokens: 2000, json: true },
   podcast:    { system: PODCAST_SYSTEM,    max_tokens: 8000, json: true },
+  specialist: { system: "",                max_tokens: 6000, json: false }, // system comes from the field's tool
+};
+
+// ── Field specialties ────────────────────────────────────────────────────────
+// Each field is a "lens" (a specialist persona prepended to every generation so
+// notes/quiz/flashcards/advanced/podcast are re-toned to how that professional
+// studies) plus one signature "tool" (its own AI breakdown of the material).
+export const FIELDS = {
+  none: { id: "none", name: "General", icon: "📚", lens: "", tool: null },
+  medicine: {
+    id: "medicine", name: "Medicine", icon: "⚕️",
+    lens: "Adopt the mindset of a clinician and medical educator. Frame the material around mechanism (pathophysiology) → clinical presentation → diagnosis → management; flag high-yield, testable facts; add memory aids and mnemonics where useful; use correct medical terminology but briefly define it.",
+    tool: { key: "case", name: "Clinical case", icon: "🩺",
+      system: "You are a clinical educator. From the student's material, write ONE realistic teaching CASE in GitHub-flavoured Markdown: a brief patient vignette (presentation, relevant history/exam/labs), then a short guided work-up — the key questions to ask, the most likely diagnosis with reasoning, important differentials to exclude, and initial management — each tied back to the underlying concept from the material. Do not invent facts beyond standard clinical reasoning. End with 2–3 **high-yield takeaways**." } },
+  law: {
+    id: "law", name: "Law", icon: "⚖️",
+    lens: "Adopt the mindset of a legal scholar. Organise the material as Issue → Rule → Application → Conclusion (IRAC); surface holdings, legal tests, and elements; note exceptions and policy rationale; spot ambiguities and counterarguments.",
+    tool: { key: "irac", name: "IRAC brief", icon: "⚖️",
+      system: "You are a law tutor. From the student's material, produce a clear IRAC breakdown in GitHub-flavoured Markdown: **Issue(s)** (the legal questions), **Rule(s)** (governing doctrine, tests and elements, naming any authorities that appear in the material), **Application** (how the rules apply, with counterarguments and exceptions), and **Conclusion**. Add a short **Issue-spotting checklist**. Base everything strictly on the material; do not invent cases or statutes." } },
+  engineering: {
+    id: "engineering", name: "Engineering", icon: "⚙️",
+    lens: "Adopt the mindset of an engineer. Reason from first principles; state assumptions and governing equations; track units and orders of magnitude; emphasise derivations, trade-offs, and real-world application.",
+    tool: { key: "problems", name: "Worked problems", icon: "📐",
+      system: "You are an engineering tutor. From the student's material, create 3–5 worked practice PROBLEMS in GitHub-flavoured Markdown. For each: state the problem, list givens and assumptions, show the governing equation(s), then work through the solution step by step with units, ending in a **bold final answer** and a one-line sanity check. Keep problems grounded in the material's concepts; use LaTeX ($…$) for math." } },
+  cs: {
+    id: "cs", name: "Computer Science", icon: "⌨️",
+    lens: "Adopt the mindset of a computer scientist. Emphasise algorithms, data structures, complexity (time/space, Big-O), correctness, and design trade-offs; use precise terminology and small concrete examples.",
+    tool: { key: "walkthrough", name: "Code walkthrough", icon: "💻",
+      system: "You are a computer science tutor. From the student's material, produce a focused walkthrough in GitHub-flavoured Markdown: explain the key algorithm/concept, give a short clean code example in a fenced code block, trace how it runs on a small input, and analyse its time and space complexity (Big-O) with reasoning. Note common pitfalls and trade-offs. Stay faithful to the material." } },
+  finance: {
+    id: "finance", name: "Business & Finance", icon: "📈",
+    lens: "Adopt the mindset of a business strategist and financial analyst. Use established frameworks (SWOT, Porter's Five Forces, unit economics); quantify with key metrics and ratios; weigh trade-offs and incentives; ground ideas in concrete examples.",
+    tool: { key: "casestudy", name: "Case study", icon: "📊",
+      system: "You are a business-school tutor. From the student's material, write a concise CASE STUDY analysis in GitHub-flavoured Markdown: the situation/problem, analysis using a named framework, the key metrics or drivers that matter, options with their trade-offs, and a reasoned recommendation. Add 2–3 **key takeaways**. Base it on the material; do not fabricate figures." } },
+  science: {
+    id: "science", name: "Natural Sciences", icon: "🔬",
+    lens: "Adopt the mindset of a research scientist. Distinguish hypotheses, mechanisms, and evidence; explain cause-and-effect and underlying processes; connect observations to experiments; be precise about conditions and assumptions.",
+    tool: { key: "mechanism", name: "Mechanism & experiment", icon: "🧪",
+      system: "You are a science tutor. From the student's material, produce in GitHub-flavoured Markdown: (1) a clear step-by-step explanation of the key MECHANISM or process (what causes what, and why), and (2) a simple THOUGHT EXPERIMENT or testable prediction that would probe it, including what you'd expect to observe. Stay faithful to the material." } },
+  humanities: {
+    id: "humanities", name: "Humanities & History", icon: "📜",
+    lens: "Adopt the mindset of a historian/humanities scholar. Foreground context, causation and consequence, competing perspectives, and the use of evidence; build and critique arguments; attend to significance and interpretation over rote facts.",
+    tool: { key: "essay", name: "Essay plan", icon: "✍️",
+      system: "You are a humanities tutor. From the student's material, produce an ESSAY PLAN in GitHub-flavoured Markdown: a sharp thesis answering an important question about the material, then 3–4 argument sections — each with a claim, supporting evidence/examples from the material, and a counterpoint to address — and a brief conclusion. Keep it analytical, not merely descriptive." } },
+  math: {
+    id: "math", name: "Mathematics", icon: "∑",
+    lens: "Adopt the mindset of a mathematician. Be rigorous and precise; state definitions and theorems exactly; justify claims with proofs or derivations; use correct notation in LaTeX ($…$) and watch edge cases.",
+    tool: { key: "proof", name: "Proofs & derivations", icon: "🧮",
+      system: "You are a mathematics tutor. From the student's material, pick the central result(s) and give rigorous PROOFS or DERIVATIONS in GitHub-flavoured Markdown: state each definition/theorem precisely, then prove or derive it step by step with justified steps, using LaTeX ($…$) for all math. Note assumptions and edge cases, and finish with a worked example. Base everything on the material." } },
 };
 
 function extractJson(text) {
@@ -269,9 +319,20 @@ function buildBody(task, payload, cfg) {
     };
   }
 
+  if (task === "specialist") {
+    // The system prompt is the selected field's signature tool.
+    const f = FIELDS[payload?.field];
+    let sys = (f && f.tool && f.tool.system) || "You are an expert tutor. Produce a helpful specialist breakdown of the material in GitHub-flavoured Markdown.";
+    if (payload?.context) sys += `\n\nSTUDENT'S FOCUS — weigh this heavily and follow it: ${String(payload.context).slice(0, 2000)}`;
+    const source = String(payload?.source || "").slice(0, MAX_SOURCE);
+    return { system_instruction: { parts: [{ text: sys }] }, contents: [{ role: "user", parts: [{ text: `SOURCE MATERIAL:\n\n${source}` }] }], generationConfig };
+  }
+
   const source = String(payload?.source || "").slice(0, MAX_SOURCE);
   const label = task === "lesson" ? "VIDEO TRANSCRIPT" : "SOURCE MATERIAL";
   let sys = cfg.system;
+  // Field "lens": prepend a specialist persona so generation is re-toned to the field.
+  { const f = FIELDS[payload?.field]; if (f && f.lens) sys = `${f.lens}\n\n${sys}`; }
   if (task === "flashcards" || task === "quiz") {
     if (payload?.difficulty) sys += difficultyDirective(task, payload.difficulty);
     if (payload?.count) sys += countDirective(task, payload.count);
@@ -316,6 +377,9 @@ function tuneCall(task) {
   if (task === "merge") {
     // Synthesising several notes into one is a larger single generation.
     return { timeoutMs: 90_000, attemptsPrimary: 2, attemptsFallback: 1, maxModels: 3 };
+  }
+  if (task === "specialist") {
+    return { timeoutMs: 75_000, attemptsPrimary: 2, attemptsFallback: 1, maxModels: 3 };
   }
   return { timeoutMs: 45_000, attemptsPrimary: 4, attemptsFallback: 2, maxModels: MODEL_CHAIN.length };
 }

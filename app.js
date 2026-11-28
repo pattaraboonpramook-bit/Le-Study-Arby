@@ -7,7 +7,7 @@ import {
   listNotes, getNote, createNote, updateNote, deleteNote,
   listChat, addChat,
 } from "./store.js";
-import { generate, hasGeminiKey, getGeminiKey, setGeminiKey, getLang, setLang, onAiStatus } from "./ai.js";
+import { generate, hasGeminiKey, getGeminiKey, setGeminiKey, getLang, setLang, onAiStatus, FIELDS } from "./ai.js";
 import { GOOGLE_CLIENT_ID, GOOGLE_API_KEY } from "./drive-config.js";
 
 // Output languages: value is the name used in the AI prompt; label is the native name.
@@ -398,6 +398,19 @@ function focusBoxHTML(kind, placeholder) {
 function wireFocusBoxes() {
   if (!state.current) return;
   $$(".focus-ctx").forEach((t) => (t.oninput = () => setFocus(state.current.id, t.dataset.kind, t.value)));
+}
+
+// ── Field specialty (lens + signature tool), per note ────────────────────────
+const getField = (id) => { try { return localStorage.getItem("recall_field_" + id) || "none"; } catch { return "none"; } };
+const setField = (id, v) => { try { if (v && v !== "none") localStorage.setItem("recall_field_" + id, v); else localStorage.removeItem("recall_field_" + id); } catch {} };
+const currentField = () => FIELDS[getField(state.current && state.current.id)] || FIELDS.none;
+// The signature-tool output is cached per note + field.
+const getSpecialistLS = (id, fid) => { try { return localStorage.getItem(`recall_specialist_${fid}_${id}`) || ""; } catch { return ""; } };
+const setSpecialistLS = (id, fid, md) => { try { localStorage.setItem(`recall_specialist_${fid}_${id}`, md); } catch {} };
+// Study tabs, plus the current field's signature tool when a field is chosen.
+function studyTabs() {
+  const f = currentField();
+  return (f && f.tool) ? [...STUDY_TABS, ["specialist", f.tool.name, f.tool.icon]] : STUDY_TABS;
 }
 
 // Difficulty + count for flashcards / quizzes (stored per-device).
@@ -1438,7 +1451,7 @@ function noteHTML() {
   const readTabs = READ_TABS
     .map(([k, label]) => `<button data-tab="${k}" class="${state.noteTab === k ? "active" : ""}">${label}</button>`)
     .join("");
-  const studyHit = STUDY_TABS.find(([k]) => k === state.noteTab);
+  const studyHit = studyTabs().find(([k]) => k === state.noteTab);
   const studyBtn = `<button id="study-btn" class="study-btn${studyHit ? " active" : ""}" aria-haspopup="menu" aria-expanded="false">✦ ${studyHit ? studyHit[1] : "Study"} <span class="caret">▾</span></button>`;
 
   return `<div>
@@ -1453,6 +1466,9 @@ function noteHTML() {
       <span>${fmtDate(n.updated_at)}</span>
       ${n.source_ref ? `· <a href="${escapeHtml(n.source_ref)}" target="_blank" rel="noopener">source</a>` : ""}
       <button class="subject-chip" id="note-subject">🏷 ${getSubject(n.id) ? escapeHtml(getSubject(n.id)) : "Add subject"}</button>
+      <select class="field-select" id="note-field" title="Field specialist lens — re-tones every feature and unlocks a signature tool">
+        ${Object.values(FIELDS).map((f) => `<option value="${f.id}"${f.id === getField(n.id) ? " selected" : ""}>${f.icon} ${f.name}</option>`).join("")}
+      </select>
     </div>
     <div class="tabs"><div class="tabs-read">${readTabs}</div><div class="menu-wrap">${studyBtn}</div></div>
     <div id="note-panel"></div>
@@ -1472,6 +1488,14 @@ function wireNote() {
     sub.textContent = "🏷 " + (getSubject(state.current.id) || "Add subject");
     toast(v.trim() ? "Subject set ✓" : "Subject cleared", "success");
   };
+  const fieldSel = $("#note-field");
+  if (fieldSel) fieldSel.onchange = () => {
+    setField(state.current.id, fieldSel.value);
+    if (fieldSel.value === "none" && state.noteTab === "specialist") state.noteTab = "notes";
+    const f = currentField();
+    toast(f.tool ? `${f.icon} ${f.name} lens on — features re-tone, and “${f.tool.name}” is in the ✦ Study menu.` : "Field lens off.", "success");
+    renderView();
+  };
   $$(".tabs-read button").forEach((b) => (b.onclick = () => { state.noteTab = b.dataset.tab; state.notesEditing = false; renderNotePanel(); syncTabActive(); }));
   const studyBtn = $("#study-btn");
   if (studyBtn) studyBtn.onclick = (e) => { e.stopPropagation(); openStudyMenu(studyBtn); };
@@ -1482,7 +1506,7 @@ function syncTabActive() {
   $$(".tabs-read button").forEach((b) => b.classList.toggle("active", b.dataset.tab === state.noteTab));
   const sbtn = $("#study-btn");
   if (sbtn) {
-    const hit = STUDY_TABS.find(([k]) => k === state.noteTab);
+    const hit = studyTabs().find(([k]) => k === state.noteTab);
     sbtn.classList.toggle("active", !!hit);
     sbtn.innerHTML = `✦ ${hit ? hit[1] : "Study"} <span class="caret">▾</span>`;
   }
@@ -1498,7 +1522,7 @@ function openStudyMenu(btn) {
   menu.className = "menu study-menu";
   menu.id = "study-menu";
   menu.setAttribute("role", "menu");
-  menu.innerHTML = STUDY_TABS
+  menu.innerHTML = studyTabs()
     .map(([k, label, icon]) => `<button role="menuitem" data-tab="${k}" class="${state.noteTab === k ? "active" : ""}"><span class="si-ico">${icon}</span>${label}</button>`)
     .join("");
   btn.parentElement.appendChild(menu);
@@ -1540,6 +1564,7 @@ function renderNotePanel() {
   else if (tab === "teach") { p.innerHTML = teachTabHTML(); wireTeach(); }
   else if (tab === "podcast") { p.innerHTML = podcastTabHTML(); wirePodcast(); }
   else if (tab === "chat") { p.innerHTML = `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`; loadAndRenderChat(); }
+  else if (tab === "specialist") { p.innerHTML = specialistTabHTML(); wireSpecialist(); }
   if (tab === "notes") wireNotesTab();
   wireFocusBoxes();
   typesetMath(p);
@@ -1746,7 +1771,7 @@ async function generateNotes() {
   if (!source) { toast("Nothing to summarize.", "error"); return; }
   busy(true, "Writing your notes…");
   try {
-    const result = await aiGenerate("notes", { source, context: getFocus(n.id, "notes") });
+    const result = await aiGenerate("notes", { source, context: getFocus(n.id, "notes"), field: getField(n.id) });
     await patchNote({ notes_md: result, title: titleFromMarkdown(result, n.title) });
     renderNotePanel();
     award(8);
@@ -1804,7 +1829,7 @@ async function generateAdvanced() {
   const n = state.current;
   busy(true, "Assembling the advanced breakdown…");
   try {
-    const res = await aiGenerate("advanced", { source: n.notes_md || n.transcript, context: getFocus(n.id, "advanced") });
+    const res = await aiGenerate("advanced", { source: n.notes_md || n.transcript, context: getFocus(n.id, "advanced"), field: getField(n.id) });
     const adv = {
       deepDive: String(res && res.deepDive || ""),
       mainPoints: (res && Array.isArray(res.mainPoints) ? res.mainPoints : []).filter((m) => m && m.point),
@@ -1904,7 +1929,7 @@ async function generateFlashcards() {
   const n = state.current;
   busy(true, "Making flashcards…");
   try {
-    const result = await aiGenerate("flashcards", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("flashcards", 10), context: getFocus(n.id, "flashcards") });
+    const result = await aiGenerate("flashcards", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("flashcards", 10), context: getFocus(n.id, "flashcards"), field: getField(n.id) });
     const cards = (Array.isArray(result) ? result : []).filter((c) => c && c.front && c.back);
     if (!cards.length) throw new Error("No cards were generated. Try again.");
     await patchNote({ flashcards: cards });
@@ -2068,7 +2093,7 @@ async function generateQuiz() {
   const n = state.current;
   busy(true, "Writing quiz questions…");
   try {
-    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("quiz", 8), context: getFocus(n.id, "quiz") });
+    const result = await aiGenerate("quiz", { source: n.notes_md || n.transcript, difficulty: getDifficulty(), count: getCount("quiz", 8), context: getFocus(n.id, "quiz"), field: getField(n.id) });
     const quiz = (Array.isArray(result) ? result : []).filter(
       (q) => q && q.question && Array.isArray(q.options) && q.options.length >= 2
         && Number.isInteger(q.answer) && q.answer >= 0 && q.answer < q.options.length);
@@ -2257,7 +2282,7 @@ async function generatePodcast() {
   stopSpeech();
   busy(true, "Recording your podcast…");
   try {
-    const raw = await aiGenerate("podcast", { source: n.notes_md || n.transcript, minutes: getPodMinutes(), context: getFocus(n.id, "podcast") });
+    const raw = await aiGenerate("podcast", { source: n.notes_md || n.transcript, minutes: getPodMinutes(), context: getFocus(n.id, "podcast"), field: getField(n.id) });
     const script = (Array.isArray(raw) ? raw : [])
       .filter((t) => t && t.text)
       .map((t) => ({ speaker: (t.speaker === "B" || /sam|host ?2|b\b/i.test(String(t.speaker))) ? "B" : "A", text: String(t.text) }));
@@ -2266,6 +2291,48 @@ async function generatePodcast() {
     setPodcastLS(n.id, script);
     renderNotePanel();
     award(6, ["podcast"]); markTool("podcast");
+  } catch (err) { toast(err.message, "error"); } finally { busy(false); }
+}
+
+// ── Specialist tool (the selected field's signature breakdown) ───────────────
+function specialistTabHTML() {
+  const n = state.current;
+  const f = currentField();
+  if (!f || !f.tool) {
+    return genCTA("✦", "Pick a field first", "Choose a field at the top of this note (next to the subject) to unlock its specialist tool — Clinical case, IRAC brief, Worked problems and more.", "spec-pick", "Choose a field");
+  }
+  const material = (n.notes_md || n.transcript || "").trim();
+  if (!material) return genCTA(f.tool.icon, f.tool.name, "Generate notes first, then build this.", "gen-notes-spec", "Go to Notes");
+  const ph = `Anything specific for the ${f.tool.name.toLowerCase()}? (optional)`;
+  const saved = getSpecialistLS(n.id, f.id);
+  if (!saved) {
+    return focusBoxHTML("specialist", ph)
+      + genCTA(f.tool.icon, f.tool.name, `A ${f.name} specialist's breakdown of this note, in their own way of thinking.`, "gen-specialist", `Generate ${f.tool.name.toLowerCase()}`);
+  }
+  return focusBoxHTML("specialist", ph)
+    + `<div class="panel"><div class="spec-head">${f.tool.icon} ${escapeHtml(f.tool.name)} · <span>${escapeHtml(f.name)} lens</span></div>
+       <div class="prose">${mdToHtml(saved)}</div>
+       <div style="margin-top:20px;text-align:center"><button class="btn btn-outline btn-sm" id="regen-specialist">↻ Regenerate</button></div></div>`;
+}
+function wireSpecialist() {
+  const pick = $("#spec-pick"); if (pick) { pick.onclick = () => { const s = $("#note-field"); if (s) { s.focus(); try { s.showPicker && s.showPicker(); } catch {} } }; return; }
+  const gn = $("#gen-notes-spec"); if (gn) { gn.onclick = () => { state.noteTab = "notes"; renderNotePanel(); syncTabActive(); }; return; }
+  const g = $("#gen-specialist"); if (g) g.onclick = generateSpecialist;
+  const rg = $("#regen-specialist"); if (rg) rg.onclick = generateSpecialist;
+}
+async function generateSpecialist() {
+  const n = state.current;
+  const f = currentField();
+  if (!f || !f.tool) { toast("Pick a field for this note first.", "error"); return; }
+  const source = (n.notes_md || n.transcript || "").trim();
+  if (!source) { toast("Generate notes first.", "error"); return; }
+  busy(true, `Building your ${f.tool.name.toLowerCase()}…`);
+  try {
+    const md = await aiGenerate("specialist", { source, field: f.id, context: getFocus(n.id, "specialist") });
+    if (!md || !md.trim()) throw new Error("Nothing came back — try again.");
+    setSpecialistLS(n.id, f.id, md);
+    renderNotePanel();
+    award(8);
   } catch (err) { toast(err.message, "error"); } finally { busy(false); }
 }
 

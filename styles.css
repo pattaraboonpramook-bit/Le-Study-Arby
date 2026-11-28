@@ -275,7 +275,7 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 /* ── Note view ── */
 .note-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
 .note-head h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.4rem, 3.6vw, 2rem); letter-spacing: -0.02em; flex: 1; }
-.note-sub { color: var(--muted); font-size: 0.82rem; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; }
+.note-sub { color: var(--muted); font-size: 0.82rem; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
 .tabs { display: flex; align-items: stretch; gap: 10px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
 .tabs-read { display: flex; gap: 4px; min-width: 0; flex: 1 1 auto; overflow-x: auto; }
@@ -289,6 +289,15 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.65; }
 .study-btn:hover { color: var(--text); background: var(--border); }
 .study-btn.active { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 .study-btn .caret { font-size: 0.7em; opacity: 0.75; }
+
+/* Field specialist: per-note lens picker + signature-tool header */
+.field-select { font: inherit; font-size: .8rem; font-weight: 600; color: var(--text-2);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+  padding: 4px 10px; cursor: pointer; max-width: 200px; }
+.field-select:hover { border-color: var(--accent); color: var(--text); }
+.field-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.spec-head { font-weight: 700; font-size: 1rem; margin-bottom: 14px; }
+.spec-head span { color: var(--text-2); font-weight: 600; font-size: .85rem; }
 
 .panel { animation: fade .25s ease; }
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } }
