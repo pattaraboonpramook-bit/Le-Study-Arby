@@ -203,6 +203,16 @@ export const FIELDS = {
     lens: "Adopt the mindset of a language teacher. Focus on vocabulary and collocations, grammar patterns and conjugation, pronunciation, and example sentences in real context; flag common mistakes and false friends and note register; favour active recall and usage over rote.",
     tool: { key: "vocabdrills", name: "Vocab & drills", icon: "📖",
       system: "You are a language tutor. From the student's material, produce in GitHub-flavoured Markdown: a KEY VOCABULARY list (term — meaning — a natural example sentence); the main GRAMMAR point(s) with the pattern and examples; COMMON PITFALLS (false friends, typical errors); and 4–6 PRACTICE items (sentences to translate or gaps to fill) with an answer key. Base everything on the material." } },
+  nursing: {
+    id: "nursing", name: "Nursing", icon: "🧑‍⚕️",
+    lens: "Adopt the mindset of a nurse. Centre patient care and safety; work the nursing process (assess → diagnose → plan → implement → evaluate); prioritise with ABCs and Maslow; attend to vital signs and monitoring, medications and dosages, and clear patient education and communication.",
+    tool: { key: "careplan", name: "Care plan", icon: "📋",
+      system: "You are a nursing tutor. From the student's material, build a nursing CARE PLAN in GitHub-flavoured Markdown: key ASSESSMENT data (subjective/objective); a NURSING DIAGNOSIS (problem, related-to, as-evidenced-by); SMART goals / expected outcomes; nursing INTERVENTIONS each with a brief rationale; and EVALUATION criteria. Add safety and patient-education notes. Base everything on the material; do not invent clinical values." } },
+  design: {
+    id: "design", name: "Design", icon: "🎨",
+    lens: "Adopt the mindset of a designer. Start from the user/audience and the problem; weigh function and usability alongside visual principles (hierarchy, contrast, balance, typography, colour, grid, whitespace); value iteration, feedback and critique; respect constraints, so that form serves purpose.",
+    tool: { key: "critique", name: "Design critique", icon: "🖌️",
+      system: "You are a design tutor. From the student's material, produce a design CRITIQUE in GitHub-flavoured Markdown: the problem and intended audience; the core concept/approach; how visual and interaction principles are applied (hierarchy, contrast, typography, colour, layout, usability); what works and what doesn't; and concrete, prioritised improvements. Base everything on the material." } },
 };
 
 function extractJson(text) {
