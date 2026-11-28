@@ -193,6 +193,16 @@ export const FIELDS = {
     lens: "Adopt the mindset of a psychologist. Separate theory, construct, and evidence; consider competing perspectives (cognitive, behavioural, biological, social, developmental); scrutinise study design, operationalisation, validity, bias and ethics; connect findings to real behaviour.",
     tool: { key: "theory", name: "Theory & evidence", icon: "🧩",
       system: "You are a psychology tutor. From the student's material, produce a breakdown in GitHub-flavoured Markdown: the key theory or construct explained clearly; the supporting EVIDENCE (naming any studies in the material, with their method and findings); a balanced EVALUATION (strengths, limitations, biases, ethical issues); and a real-world application. Base everything strictly on the material; do not invent studies." } },
+  economics: {
+    id: "economics", name: "Economics", icon: "💹",
+    lens: "Adopt the mindset of an economist. Reason from incentives, trade-offs and marginal analysis; use supply and demand, equilibrium, elasticity, and cost–benefit thinking; distinguish micro from macro; treat models as assumptions → predictions and note market failures and real-world caveats.",
+    tool: { key: "model", name: "Model & diagram", icon: "📉",
+      system: "You are an economics tutor. From the student's material, produce a breakdown in GitHub-flavoured Markdown: the key economic MODEL or concept (its assumptions and the mechanism); a described DIAGRAM (axes, the curves, and what shifts them and why); a short worked example or scenario; and the policy implications or real-world limitations. Base everything on the material." } },
+  languages: {
+    id: "languages", name: "Languages", icon: "🔤",
+    lens: "Adopt the mindset of a language teacher. Focus on vocabulary and collocations, grammar patterns and conjugation, pronunciation, and example sentences in real context; flag common mistakes and false friends and note register; favour active recall and usage over rote.",
+    tool: { key: "vocabdrills", name: "Vocab & drills", icon: "📖",
+      system: "You are a language tutor. From the student's material, produce in GitHub-flavoured Markdown: a KEY VOCABULARY list (term — meaning — a natural example sentence); the main GRAMMAR point(s) with the pattern and examples; COMMON PITFALLS (false friends, typical errors); and 4–6 PRACTICE items (sentences to translate or gaps to fill) with an answer key. Base everything on the material." } },
 };
 
 function extractJson(text) {
