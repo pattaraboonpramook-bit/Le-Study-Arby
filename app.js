@@ -429,12 +429,13 @@ function fieldListHTML(cur, query) {
   let html = "";
   if (match(FIELDS.none)) html += opt(FIELDS.none);
   const seen = new Set(["none"]);
+  const byName = (a, b) => a.name.localeCompare(b.name);
   for (const [label, ids] of FIELD_GROUPS) {
-    const items = ids.map((id) => FIELDS[id]).filter(match);
+    const items = ids.map((id) => FIELDS[id]).filter(match).sort(byName);
     items.forEach((f) => seen.add(f.id));
     if (items.length) html += `<div class="field-group">${label}</div>` + items.map(opt).join("");
   }
-  const others = Object.values(FIELDS).filter((f) => !seen.has(f.id) && match(f));
+  const others = Object.values(FIELDS).filter((f) => !seen.has(f.id) && match(f)).sort(byName);
   if (others.length) html += `<div class="field-group">Other</div>` + others.map(opt).join("");
   return html || `<div class="field-empty">No field matches “${escapeHtml(query)}”.</div>`;
 }
